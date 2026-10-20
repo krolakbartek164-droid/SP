@@ -3868,9 +3868,9 @@
       const left = [
         { icon: '⚽', label: 'Rozegrane Mecze', value: fmt(nMatches), sub: 'W oficjalnej bazie' },
         nMatches ? { icon: '🥅', label: 'Strzelone Bramki', value: fmt(f.goals), sub: `Średnio ${(f.goals / nMatches).toFixed(1).replace('.', ',')} na mecz` } : null,
-        f.leagues ? { icon: '📅', label: 'Sezony Ligowe', value: fmt(f.leagues), sub: 'Edycji lig od startu rozgrywek' } : null,
+        f.leagues ? { icon: '📅', label: 'Sezony Ligowe', value: fmt(f.leagues), sub: 'Edycji ligowych w bazie danych' } : null,
         f.tournaments ? { icon: '🏆', label: 'Turnieje', value: fmt(f.tournaments), sub: 'Rozegranych edycji turniejów' } : null,
-        f.medalsTotal ? { icon: '🏅', label: 'Rozdane Medale', value: fmt(f.medalsTotal), sub: 'Trofea rozdane w historii rozgrywek' } : null
+        f.medalsTotal ? { icon: '🏅', label: 'Rozdane Medale', value: fmt(f.medalsTotal), sub: 'Rozdane trofea' } : null
       ].filter(Boolean);
 
       // 4. kafelek (kolejność wymieszana: honory, rekordy, serie na przemian)
