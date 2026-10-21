@@ -4523,6 +4523,419 @@
       if (!routeDone) applyRoute(true);
     });
   </script>
+
+  <!-- ============================================================================ -->
+  <!-- PAKIET POPRAWEK MOBILNYCH (UX) + ŚLEDZENIE PAR H2H I APLIKACJI W STATYSTYKACH -->
+  <!-- ============================================================================ -->
+  <style>
+    /* Pasek zakładek i filtrów ligowych bez brzydkiego paska przewijania na telefonach */
+    #active-leagues-pills::-webkit-scrollbar,
+    header nav::-webkit-scrollbar { display: none; }
+    #active-leagues-pills,
+    header nav { -ms-overflow-style: none; scrollbar-width: none; }
+
+    /* Przyklejona kolumna z drużyną podczas przewijania tabeli w bok na telefonie */
+    .sticky-col {
+      position: sticky;
+      left: 0;
+      z-index: 10;
+      background-color: var(--panel);
+      box-shadow: 4px 0 12px -6px rgba(0, 0, 0, 0.45);
+    }
+    /* podświetlenie wiersza nakładane na stałe tło (samo tło komórki musi być kryjące) */
+    tr.row-hover:hover .sticky-col {
+      background-image: linear-gradient(var(--row-hover), var(--row-hover));
+    }
+    /* komórka nagłówka ma ten sam odcień co reszta nagłówka (bg-slate-950/60) */
+    thead .sticky-col { background-image: linear-gradient(rgb(13 12 10 / 0.6), rgb(13 12 10 / 0.6)); }
+    html[data-theme="light"] thead .sticky-col { background-image: linear-gradient(rgb(243 238 225 / 0.6), rgb(243 238 225 / 0.6)); }
+  </style>
+
+  <script>
+    // 1. Telefon: górny wiersz nagłówka (logo + tytuł) przewija się razem ze stroną, a pasek zakładek zostaje przyklejony u góry.
+    //    Nie zmieniamy wysokości nagłówka podczas przewijania – wcześniejsze zwijanie klasą powodowało migotanie w Chrome
+    //    (przeglądarka korygowała pozycję przewijania, a skrypt brał to za przewinięcie w górę).
+    (function () {
+      const hdr = document.querySelector('header');
+      const nav = hdr && hdr.querySelector('nav');
+      const navWrap = nav && nav.parentElement;
+      if (!hdr || !navWrap) return;
+      const mq = window.matchMedia('(max-width: 767px)');
+      function update() {
+        hdr.style.top = mq.matches ? (-Math.max(0, navWrap.offsetTop - 8)) + 'px' : '';
+      }
+      update();
+      if (window.ResizeObserver) new ResizeObserver(update).observe(hdr);
+      window.addEventListener('resize', update);
+      if (mq.addEventListener) mq.addEventListener('change', update); else if (mq.addListener) mq.addListener(update);
+    })();
+
+    // 2. Dodanie śledzenia par H2H (sortowanych alfabetycznie, bez duplikatów przy zmianie wagi)
+    let _lastTrackedH2H = '';
+    Stats.h2h = function (teamA, teamB) {
+      if (!teamA || !teamB || teamA === teamB) return;
+      const pair = [String(teamA).trim(), String(teamB).trim()]
+        .sort((a, b) => a.localeCompare(b, 'pl'))
+        .join(' vs ');
+      if (pair !== _lastTrackedH2H) {
+        _lastTrackedH2H = pair;
+        Stats.event('h2h', pair);
+      }
+    };
+
+    // 3. Przewijanie na górę przy zmianie zakładki (naprawa lądowania na dole strony)
+    const _origSwitchTab = switchTab;
+    switchTab = function (tab) {
+      _origSwitchTab(tab);
+      if (window.scrollY > 150) {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    };
+
+    // 4. Poprawiona tabela Rankingu ELO (Punkty ELO od razu widoczne na telefonie + miejscowość pod nazwą + przyklejona drużyna)
+    (function () {
+      const rankTheadRow = document.querySelector('#view-ranking thead tr');
+      if (rankTheadRow) {
+        rankTheadRow.innerHTML = `
+          <th class="py-3 px-2.5 md:px-4 w-12 md:w-16 text-center">Poz.</th>
+          <th class="py-3 px-3 md:px-4 sticky-col">Drużyna</th>
+          <th class="py-3 px-3 md:px-4 text-right">Punkty ELO</th>
+          <th class="py-3 px-4 hidden md:table-cell">Miejscowość</th>
+          <th class="py-3 px-3 md:px-4 text-center">Mecze</th>
+          <th class="py-3 px-3 md:px-4 text-right">Peak ELO</th>
+          <th class="py-3 px-3 md:px-4 text-center">Forma (ost. miesiąc)</th>
+        `;
+      }
+    })();
+
+    // Zmiana pozycji pod numerem, w obrębie komórki. Wcześniej strzałka wystawała w bok i na telefonie
+    // zasłaniała ją przyklejona kolumna z drużyną (była widoczna tylko jej krawędź).
+    renderRankMove = function (delta) {
+      if (delta === undefined || Math.abs(delta) < RANK_MOVE_MIN) return '';
+      const n = Math.abs(delta);
+      const up = delta > 0;
+      const tip = `${up ? 'Awans' : 'Spadek'} o ${n} ${plural(n, 'miejsce', 'miejsca', 'miejsc')} w ostatnich ${RANK_MOVE_DAYS} dniach`;
+      return `<span class="text-[11px] font-extrabold leading-none whitespace-nowrap ${up ? 'text-emerald-500' : 'text-rose-500'}" title="${tip}" aria-label="${tip}">${up ? '▲' : '▼'}${n}</span>`;
+    };
+
+    renderRanking = function () {
+      const search = (document.getElementById('ranking-search')?.value || "").toLowerCase();
+      const tbody = document.getElementById('ranking-tbody');
+
+      let list = STATE.teams.filter(t => {
+        if (STATE.rankingMode === 'active' && !t.active) return false;
+        if (STATE.locationFilter.type === 'CITY') {
+          if (t.city !== STATE.locationFilter.value) return false;
+        } else if (STATE.locationFilter.type === 'GMINA') {
+          const foundDef = MAIN_LOCATION_GROUPS.find(g => g.gmina === STATE.locationFilter.value);
+          if (foundDef && !foundDef.cities.includes(t.city)) return false;
+        }
+        if (search && !t.name.toLowerCase().includes(search)) return false;
+        return true;
+      });
+
+      list.sort((a, b) => b.elo - a.elo);
+      const rankMoves = computeRankMoves(STATE.teams.filter(t => STATE.rankingMode === 'active' ? t.active : true));
+
+      if (list.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-xs text-slate-400">Brak drużyn spełniających wybrane kryteria wyszukiwania.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = list.map((t, idx) => {
+        const pos = idx + 1;
+        const badgeColor = pos === 1 ? "bg-amber-400 text-slate-950 font-black"
+                         : pos === 2 ? "bg-zinc-300 text-slate-950 font-black"
+                         : pos === 3 ? "bg-amber-700 text-slate-50 font-black"
+                         : "bg-slate-800/90 text-slate-300 font-bold";
+
+        return `
+          <tr onclick="openTeamProfile('${escapeJsStr(t.name)}')" class="row-hover cursor-pointer">
+            <td class="py-3 px-2.5 md:px-4 text-center">
+              <span class="inline-flex flex-col items-center gap-0.5">
+                <span class="inline-flex items-center justify-center w-6 h-6 md:w-7 md:h-7 rounded-lg text-xs ${badgeColor}">${pos}</span>
+                ${renderRankMove(rankMoves.get(t.name))}
+              </span>
+            </td>
+            <td class="py-2.5 px-3 md:px-4 sticky-col max-w-[175px] sm:max-w-none">
+              <div class="flex items-center gap-2.5 md:gap-3">
+                ${renderTeamAvatar(t.name, "w-8 h-8 md:w-9 md:h-9", "text-xs")}
+                <div class="min-w-0">
+                  <p class="font-bold text-xs sm:text-sm text-white hover:text-gold-400 transition truncate">${t.name}</p>
+                  ${t.city ? `<p class="text-[10px] text-slate-400 md:hidden truncate">📍 ${t.city}</p>` : ''}
+                  ${!t.active ? '<span class="text-[10px] text-slate-500 block">Poza głównym rankingiem</span>' : ''}
+                </div>
+              </div>
+            </td>
+            <td class="py-3 px-3 md:px-4 text-right font-extrabold text-sm sm:text-base text-gold-400 whitespace-nowrap">${t.elo.toFixed(1)}</td>
+            <td class="py-3 px-4 text-xs text-slate-300 hidden md:table-cell">
+              ${t.city ? `<span class="px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800">${t.city}</span>` : '<span class="text-slate-600">—</span>'}
+            </td>
+            <td class="py-3 px-3 md:px-4 text-center font-semibold text-slate-300">${t.matches}</td>
+            <td class="py-3 px-3 md:px-4 text-right text-xs font-semibold text-slate-400 whitespace-nowrap">${t.peak.toFixed(1)}</td>
+            <td class="py-3 px-3 md:px-4 text-center text-xs whitespace-nowrap">
+              ${t.form ? `<span class="px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800 font-bold">${t.form}</span>` : `<span class="text-slate-600">—</span>`}
+            </td>
+          </tr>
+        `;
+      }).join('');
+    };
+
+    // 5. Poziomy, przewijany pasek lig w "Ostatnie Mecze" na telefonie (zamiast pionowej ściany przycisków)
+    (function () {
+      const pills = document.getElementById('active-leagues-pills');
+      if (pills) {
+        pills.className = "flex md:flex-wrap items-center gap-2 pt-1 overflow-x-auto pb-1 -mx-1 px-1";
+      }
+    })();
+
+    const _origRenderMatches = renderMatches;
+    renderMatches = function () {
+      _origRenderMatches();
+      const pills = document.getElementById('active-leagues-pills');
+      if (pills) {
+        pills.querySelectorAll('button').forEach(btn => btn.classList.add('whitespace-nowrap', 'shrink-0'));
+      }
+    };
+
+    // 6. Poprawiona Gablota Medalowa na telefonie (medale pod nazwą drużyny, wszystkie liczby widoczne od razu bez przewijania)
+    (function () {
+      const medTheadRow = document.querySelector('#view-medals thead tr');
+      if (medTheadRow) {
+        medTheadRow.innerHTML = `
+          <th class="py-3 px-2.5 md:px-4 w-12 md:w-16 text-center">#</th>
+          <th class="py-3 px-3 md:px-4 sticky-col">Drużyna</th>
+          <th class="py-3 px-4 hidden md:table-cell">Gablota</th>
+          <th class="py-3 px-2 md:px-4 text-center">🥇<span class="hidden sm:inline"> Złoto</span></th>
+          <th class="py-3 px-2 md:px-4 text-center">🥈<span class="hidden sm:inline"> Srebro</span></th>
+          <th class="py-3 px-2 md:px-4 text-center">🥉<span class="hidden sm:inline"> Brąz</span></th>
+          <th class="py-3 px-2.5 md:px-4 text-center">🏆<span class="hidden sm:inline"> Razem</span></th>
+        `;
+      }
+    })();
+
+    renderMedals = function () {
+      const search = (document.getElementById('medals-search')?.value || "").toLowerCase();
+      const tbody = document.getElementById('medals-tbody');
+      if (!tbody) return;
+      const filtered = (STATE.medals || []).filter(m => !search || m.team.toLowerCase().includes(search));
+
+      if (filtered.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-xs text-slate-400">Brak drużyn pasujących do wyszukiwania.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = filtered.map(m => `
+        <tr onclick="openTeamProfile('${escapeJsStr(m.team)}')" class="row-hover cursor-pointer">
+          <td class="py-3 px-2.5 md:px-4 text-center font-extrabold text-amber-400">#${m.rank}</td>
+          <td class="py-2.5 px-3 md:px-4 sticky-col max-w-[170px] sm:max-w-none">
+            <div class="flex items-center gap-2.5 md:gap-3">
+              ${renderTeamAvatar(m.team, "w-8 h-8 md:w-9 md:h-9", "text-xs")}
+              <div class="min-w-0">
+                <span class="font-bold text-xs sm:text-sm text-white hover:text-gold-400 transition block truncate">${m.team}</span>
+                <span class="text-[11px] leading-tight tracking-tighter md:hidden block truncate">${m.showcase}</span>
+              </div>
+            </div>
+          </td>
+          <td class="py-3 px-4 text-base tracking-widest hidden md:table-cell">${m.showcase}</td>
+          <td class="py-3 px-2 md:px-4 text-center font-bold text-amber-400">${m.gold}</td>
+          <td class="py-3 px-2 md:px-4 text-center font-bold text-slate-300">${m.silver}</td>
+          <td class="py-3 px-2 md:px-4 text-center font-bold text-amber-700">${m.bronze}</td>
+          <td class="py-3 px-2.5 md:px-4 text-center font-extrabold text-gold-400 text-sm sm:text-base">${m.total}</td>
+        </tr>
+      `).join('');
+    };
+
+    // 7. Porównywarka H2H: wysyłanie pary do statystyk + wyrównanie prawej drużyny + czytelny kalkulator ELO
+    renderH2H = function () {
+      const nameA = STATE.h2hTeamA;
+      const nameB = STATE.h2hTeamB;
+      const K = parseFloat(document.getElementById('h2h-weight')?.value) || 150;
+      const resContainer = document.getElementById('h2h-results');
+
+      if (!nameA || !nameB) {
+        resContainer.innerHTML = `
+          <div class="panel rounded-2xl p-8 text-center space-y-2">
+            <div class="text-3xl">⚔️</div>
+            <p class="text-sm font-extrabold text-white">Wybierz Drużynę A oraz Drużynę B powyżej</p>
+            <p class="text-xs text-slate-400">Po wybraniu obu zespołów zobaczysz szanse procentowe, kalkulator punktów ELO oraz historię bezpośrednich meczów.</p>
+          </div>
+        `;
+        return;
+      }
+
+      const tA = STATE.teams.find(t => t.name === nameA);
+      const tB = STATE.teams.find(t => t.name === nameB);
+      if (!tA || !tB) return;
+
+      // Zapisz porównywaną parę w statystykach Google Sheets
+      Stats.h2h(tA.name, tB.name);
+
+      const expA = 1 / (1 + Math.pow(10, (tB.elo - tA.elo) / 400));
+      const expB = 1 - expA;
+
+      const winA_delta = K * (1 - expA);
+      const drawA_delta = K * (0.5 - expA);
+      const winB_delta = K * (1 - expB);
+
+      const directMatches = STATE.matches.filter(m =>
+        (m.teamA === tA.name && m.teamB === tB.name) ||
+        (m.teamA === tB.name && m.teamB === tA.name)
+      );
+
+      let winsA = 0, draws = 0, winsB = 0;
+      directMatches.forEach(m => {
+        const isA = m.teamA === tA.name;
+        const r = isA ? m.resA : (1 - m.resA);
+        if (r === 1) winsA++;
+        else if (r === 0.5) draws++;
+        else winsB++;
+      });
+
+      resContainer.innerHTML = `
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+          <div class="panel rounded-2xl p-5 space-y-4">
+            <h3 class="font-extrabold text-base text-white">📊 Szanse na wygraną</h3>
+            <div class="flex items-center justify-between gap-2 text-xs sm:text-sm font-extrabold">
+              <div onclick="openTeamProfile('${escapeJsStr(tA.name)}')" class="flex items-center gap-2 text-gold-400 cursor-pointer hover:underline min-w-0">
+                ${renderTeamAvatar(tA.name, "w-7 h-7", "text-[10px]")}
+                <div class="leading-tight truncate">
+                  <span class="block truncate">${tA.name}</span>
+                  <span class="text-xs opacity-90">${(expA * 100).toFixed(1)}%</span>
+                </div>
+              </div>
+              <div onclick="openTeamProfile('${escapeJsStr(tB.name)}')" class="flex items-center justify-end gap-2 text-sky-400 text-right cursor-pointer hover:underline min-w-0">
+                <div class="leading-tight truncate">
+                  <span class="block truncate">${tB.name}</span>
+                  <span class="text-xs opacity-90">${(expB * 100).toFixed(1)}%</span>
+                </div>
+                ${renderTeamAvatar(tB.name, "w-7 h-7", "text-[10px]")}
+              </div>
+            </div>
+            <div class="w-full h-4 bg-slate-800 rounded-full overflow-hidden flex">
+              <div style="width: ${(expA * 100).toFixed(1)}%" class="bg-gold-500 h-full"></div>
+              <div style="width: ${(expB * 100).toFixed(1)}%" class="bg-sky-500 h-full"></div>
+            </div>
+            <div class="pt-3 border-t border-slate-800 flex justify-around text-center gap-2">
+              <div><p class="text-2xl font-extrabold text-gold-400">${winsA}</p><p class="text-xs text-slate-400">Wygrane ${tA.name}</p></div>
+              <div><p class="text-2xl font-extrabold text-slate-300">${draws}</p><p class="text-xs text-slate-400">Remisy</p></div>
+              <div><p class="text-2xl font-extrabold text-sky-400">${winsB}</p><p class="text-xs text-slate-400">Wygrane ${tB.name}</p></div>
+            </div>
+          </div>
+
+          <div class="panel rounded-2xl p-5 space-y-3">
+            <h3 class="font-extrabold text-base text-white">🎯 Kalkulator punktów ELO (Waga ${K})</h3>
+            <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 flex justify-between items-center gap-2 text-xs">
+              <span class="font-bold text-slate-300">Wygrana ${tA.name}:</span>
+              <span class="whitespace-nowrap"><strong class="text-emerald-400">+${winA_delta.toFixed(1)} pkt</strong> / <strong class="text-rose-400">-${winA_delta.toFixed(1)} pkt</strong></span>
+            </div>
+            <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 flex justify-between items-center gap-2 text-xs">
+              <span class="font-bold text-slate-300">Remis:</span>
+              <span class="whitespace-nowrap"><strong class="${drawA_delta >= 0 ? 'text-emerald-400' : 'text-rose-400'}">${drawA_delta >= 0 ? '+' : ''}${drawA_delta.toFixed(1)} pkt</strong> dla ${tA.name}</span>
+            </div>
+            <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 flex justify-between items-center gap-2 text-xs">
+              <span class="font-bold text-slate-300">Wygrana ${tB.name}:</span>
+              <span class="whitespace-nowrap"><strong class="text-emerald-400">+${winB_delta.toFixed(1)} pkt</strong> / <strong class="text-rose-400">-${winB_delta.toFixed(1)} pkt</strong></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel rounded-2xl p-5">
+          <h3 class="font-extrabold text-base text-white mb-3">📜 Bezpośrednie mecze (${directMatches.length})</h3>
+          ${directMatches.length === 0 ? '<p class="text-xs text-slate-400">Brak bezpośrednich spotkań w bazie.</p>' : `
+            <div class="space-y-2">
+              ${directMatches.map(m => `
+                <div class="bg-slate-950 border border-slate-800 rounded-xl p-3 flex flex-wrap justify-between items-center gap-2 text-xs">
+                  <span class="text-slate-400">${m.date} • ${m.comp} (${m.tier})</span>
+                  <span class="font-bold text-white text-sm">${m.teamA} <span class="px-2 py-0.5 bg-slate-800 rounded mx-1">${m.goalsA}:${m.goalsB}</span> ${m.teamB}</span>
+                  <span class="text-slate-400">Waga ${m.weight}</span>
+                </div>
+              `).join('')}
+            </div>
+          `}
+        </div>
+      `;
+    };
+
+    // 8. Poziomy układ kart meczowych w "Mistrzostwach Powiatu" na telefonie (zamiast schodkowego)
+    renderDetailedMatchRow = function (m, badgeLabel) {
+      return `
+        <div class="bg-slate-950 border border-slate-800/90 rounded-2xl p-3 sm:p-3.5 flex flex-col gap-2 row-hover">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div class="flex items-center gap-2">
+              <span class="text-[11px] font-extrabold text-gold-400 bg-gold-500/10 px-2.5 py-0.5 rounded-lg border border-gold-500/25">🕒 ${m.time}</span>
+              <span class="text-[11px] font-bold text-slate-300 bg-slate-900 px-2.5 py-0.5 rounded-lg border border-slate-800">${badgeLabel}</span>
+            </div>
+            <span class="text-[11px] text-slate-400 font-semibold bg-slate-900 px-2.5 py-0.5 rounded-lg border border-slate-800">Waga 100</span>
+          </div>
+
+          <div class="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-start sm:items-center gap-1.5 sm:gap-2 pt-1">
+            <div onclick="openTeamProfile('${escapeJsStr(m.teamA)}')" class="flex flex-col items-end text-right cursor-pointer group min-w-0">
+              <div class="flex items-center justify-end gap-1.5 sm:gap-2.5 w-full">
+                <span class="font-extrabold text-xs sm:text-sm text-white group-hover:text-gold-400 transition leading-tight">${m.teamA}</span>
+                ${renderTeamAvatar(m.teamA, "w-7 h-7 sm:w-8 sm:h-8", "text-[10px]")}
+              </div>
+              ${m.scorersA && m.scorersA.length ? `<p class="text-[10px] sm:text-[11px] text-gold-400/90 font-medium mt-1 pr-0.5 leading-snug">⚽ ${m.scorersA.join(', ')}</p>` : ''}
+            </div>
+
+            <div class="flex justify-center pt-0.5 sm:pt-0">
+              <span class="px-2 sm:px-3.5 py-1 sm:py-1.5 bg-slate-900 border border-slate-700/80 rounded-xl font-extrabold text-xs sm:text-base text-white min-w-[52px] sm:min-w-[72px] text-center shadow-inner whitespace-nowrap">
+                ${m.goalsA} : ${m.goalsB}
+              </span>
+            </div>
+
+            <div onclick="openTeamProfile('${escapeJsStr(m.teamB)}')" class="flex flex-col items-start text-left cursor-pointer group min-w-0">
+              <div class="flex items-center justify-start gap-1.5 sm:gap-2.5 w-full">
+                ${renderTeamAvatar(m.teamB, "w-7 h-7 sm:w-8 sm:h-8", "text-[10px]")}
+                <span class="font-extrabold text-xs sm:text-sm text-white group-hover:text-gold-400 transition leading-tight">${m.teamB}</span>
+              </div>
+              ${m.scorersB && m.scorersB.length ? `<p class="text-[10px] sm:text-[11px] text-gold-400/90 font-medium mt-1 pl-0.5 leading-snug">⚽ ${m.scorersB.join(', ')}</p>` : ''}
+            </div>
+          </div>
+        </div>
+      `;
+    };
+
+    // 9. Wewnętrzna zakładka "📊 Statystyki" na stronie – dodane kafelki aplikacji i ranking pojedynków H2H
+    drawStats = function () {
+      const d = statsData, box = document.getElementById('stats-body');
+      if (!d) return;
+      const fmt = n => Number(n || 0).toLocaleString('pl-PL');
+      const uniq = d.uniqueEnabled ? fmt(d.totals.unique) : '—';
+      const uniqToday = d.uniqueEnabled ? fmt(d.totals.todayUnique) : '—';
+      const appInstalls = d.totals.appInstalls !== undefined ? fmt(d.totals.appInstalls) : '0';
+      const appViews = d.totals.appViews !== undefined ? fmt(d.totals.appViews) : '0';
+      const tile = (label, value, sub) => `<div class="panel rounded-2xl p-4"><p class="text-[10px] font-bold uppercase tracking-wider text-slate-400">${label}</p><p class="font-display text-3xl text-white mt-1">${value}</p><p class="text-[11px] text-slate-500 mt-0.5">${sub}</p></div>`;
+      const bars = (items, nameFn) => {
+        if (!items || !items.length) return '<p class="text-xs text-slate-400">Brak danych w tym okresie.</p>';
+        const max = Math.max(...items.map(i => i.count)) || 1;
+        return items.map(i => `<div class="space-y-1"><div class="flex justify-between gap-3 text-xs"><span class="text-slate-300 truncate">${statsEsc(nameFn(i.name))}</span><span class="font-bold text-white">${fmt(i.count)}</span></div><div class="h-1.5 rounded-full bg-slate-800 overflow-hidden"><div class="h-full rounded-full bg-gold-500" style="width:${Math.max(3, Math.round(i.count / max * 100))}%"></div></div></div>`).join('');
+      };
+      const dev = d.devices, devTotal = dev.mobile + dev.desktop;
+      const pct = n => devTotal ? Math.round(n / devTotal * 100) : 0;
+      box.innerHTML = `
+        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+          ${tile('Odsłony (' + d.days + ' dni)', fmt(d.totals.views), 'wejścia na stronę')}
+          ${tile('Unikalne osoby', uniq, d.uniqueEnabled ? 'wg przeglądarek' : 'wyłączone')}
+          ${tile('Dziś – odsłony', fmt(d.totals.todayViews), d.today)}
+          ${tile('Dziś – osoby', uniqToday, 'unikalne dziś')}
+          ${tile('📱 Zainstalowane apki', appInstalls, 'unikalne urządzenia')}
+          ${tile('📱 Wejścia z apki', appViews, 'w ostatnich ' + d.days + ' dniach')}
+        </div>
+        <div class="panel rounded-2xl p-4 mt-4">
+          <h3 class="text-base text-white mb-3">Odwiedziny dzień po dniu</h3>
+          <div class="relative h-60"><canvas id="stats-chart"></canvas></div>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
+          <div class="panel rounded-2xl p-4 space-y-3"><h3 class="text-base text-white">Najczęściej oglądane zakładki</h3>${bars(d.tabs, n => STATS_TAB_NAMES[n] || n)}</div>
+          <div class="panel rounded-2xl p-4 space-y-3"><h3 class="text-base text-white">Najczęściej oglądane drużyny</h3>${bars(d.teams, n => n)}</div>
+          <div class="panel rounded-2xl p-4 space-y-3"><h3 class="text-base text-white">⚔️ Najczęstsze porównania H2H</h3>${bars(d.h2h || [], n => n)}</div>
+          <div class="panel rounded-2xl p-4 space-y-3"><h3 class="text-base text-white">Urządzenia</h3>${bars([{ name: 'Telefon (' + pct(dev.mobile) + '%)', count: dev.mobile }, { name: 'Komputer (' + pct(dev.desktop) + '%)', count: dev.desktop }], n => n)}</div>
+        </div>`;
+      drawStatsChart(d);
+    };
+  </script>
+
   <!-- Cloudflare Web Analytics --><script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "4d20db7702f947ca8b95e5cb9904b104"}'></script><!-- End Cloudflare Web Analytics -->
 </body>
 </html>
