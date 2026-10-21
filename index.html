@@ -2269,6 +2269,55 @@
       `;
     }
 
+    // ZMIANA POZYCJI W RANKINGU (ostatnie RANK_MOVE_DAYS dni)
+    // ELO sprzed okna bierzemy z historii meczów: eloPre pierwszego meczu po dacie granicznej.
+    // Drużyna bez meczów w oknie ma ELO bez zmian; drużyna, która debiutuje w oknie, nie dostaje strzałki.
+    const RANK_MOVE_DAYS = 21;
+    const RANK_MOVE_MIN = 1;   // pokazuj strzałkę od tylu miejsc w górę/w dół
+
+    function computeRankMoves(teams) {
+      const d = new Date();
+      d.setDate(d.getDate() - RANK_MOVE_DAYS);
+      const cutoff = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+      const hadBefore = new Set();
+      const preElo = new Map();
+      const chron = STATE.matches.filter(m => m.date).sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : a.order - b.order);
+      chron.forEach(m => {
+        if (m.date <= cutoff) {
+          hadBefore.add(m.teamA); hadBefore.add(m.teamB);
+        } else {
+          if (!preElo.has(m.teamA)) preElo.set(m.teamA, m.eloPreA);
+          if (!preElo.has(m.teamB)) preElo.set(m.teamB, m.eloPreB);
+        }
+      });
+
+      const isNew = t => preElo.has(t.name) && !hadBefore.has(t.name);
+      const nowRank = new Map();
+      [...teams].sort((a, b) => b.elo - a.elo).forEach((t, i) => nowRank.set(t.name, i + 1));
+      const pastRank = new Map();
+      teams.filter(t => !isNew(t))
+        .map(t => ({ name: t.name, elo: preElo.has(t.name) ? preElo.get(t.name) : t.elo }))
+        .sort((a, b) => b.elo - a.elo)
+        .forEach((t, i) => pastRank.set(t.name, i + 1));
+
+      const moves = new Map();
+      teams.forEach(t => {
+        if (!pastRank.has(t.name)) return;
+        moves.set(t.name, pastRank.get(t.name) - nowRank.get(t.name));   // > 0 = awans
+      });
+      return moves;
+    }
+
+    function renderRankMove(delta) {
+      if (delta === undefined || Math.abs(delta) < RANK_MOVE_MIN) return '';
+      const n = Math.abs(delta);
+      const word = plural(n, 'miejsce', 'miejsca', 'miejsc');
+      const up = delta > 0;
+      const tip = `${up ? 'Awans' : 'Spadek'} o ${n} ${word} w ostatnich ${RANK_MOVE_DAYS} dniach`;
+      return `<span class="absolute left-full ml-1.5 top-1/2 -translate-y-1/2 whitespace-nowrap text-[10px] font-bold leading-none opacity-80 ${up ? 'text-emerald-400' : 'text-rose-400'}" title="${tip}" aria-label="${tip}">${up ? '▲' : '▼'}${n}</span>`;
+    }
+
     function renderRanking() {
       const search = (document.getElementById('ranking-search')?.value || "").toLowerCase();
       const tbody = document.getElementById('ranking-tbody');
@@ -2291,6 +2340,9 @@
 
       list.sort((a, b) => b.elo - a.elo);
 
+      // zmiany liczone w całym rankingu danego trybu (bez filtrów miejscowości i wyszukiwarki)
+      const rankMoves = computeRankMoves(STATE.teams.filter(t => STATE.rankingMode === 'active' ? t.active : true));
+
       if (list.length === 0) {
         tbody.innerHTML = `
           <tr>
@@ -2312,7 +2364,10 @@
         return `
           <tr onclick="openTeamProfile('${escapeJsStr(t.name)}')" class="row-hover cursor-pointer">
             <td class="py-3 px-4 text-center">
-              <span class="inline-flex items-center justify-center w-7 h-7 rounded-lg text-xs ${badgeColor}">${pos}</span>
+              <span class="relative inline-block">
+                <span class="inline-flex items-center justify-center w-7 h-7 rounded-lg text-xs ${badgeColor}">${pos}</span>
+                ${renderRankMove(rankMoves.get(t.name))}
+              </span>
             </td>
             <td class="py-3 px-4">
               <div class="flex items-center gap-3">
