@@ -198,14 +198,9 @@
     html[data-theme="dark"] .theme-icon-moon { display: none; }
     html[data-theme="light"] .theme-icon-sun { display: none; }
 
-    /* komunikat "Skopiowano link" i baner instalacji aplikacji */
+    /* komunikat "Skopiowano link" */
     .toast { position: fixed; left: 50%; bottom: 1.25rem; transform: translate(-50%, 20px); background: var(--ink); color: var(--bg); padding: 0.55rem 1rem; border-radius: 999px; font-size: 0.8rem; font-weight: 700; opacity: 0; pointer-events: none; transition: opacity 0.25s ease, transform 0.25s ease; z-index: 95; box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5); }
     .toast.show { opacity: 1; transform: translate(-50%, 0); }
-    .install-banner { position: fixed; left: 0.75rem; right: 0.75rem; bottom: 0.75rem; z-index: 80; display: none; align-items: center; gap: 0.6rem; background: var(--panel); border: 1px solid var(--panel-line); border-radius: 1rem; padding: 0.6rem 0.75rem; box-shadow: 0 14px 34px -14px rgba(0, 0, 0, 0.55); color: var(--ink); font-size: 0.8rem; font-weight: 600; }
-    .install-banner.show { display: flex; }
-    .ib-text { flex: 1; min-width: 0; line-height: 1.25; }
-    .ib-close { border: 0; background: transparent; color: var(--ink); opacity: 0.6; font-size: 1.3rem; line-height: 1; cursor: pointer; padding: 0 0.25rem; }
-    @media (min-width: 768px) { .install-banner { display: none !important; } }
 
     /* dolny pasek "dodaj do ekranu głównego" (tylko telefony) */
     .a2hs-banner[hidden] { display: none; }
@@ -769,7 +764,6 @@
       <div class="space-y-1.5 max-w-2xl">
         <p class="font-semibold text-slate-400">Kontakt i zgłaszanie błędów</p>
         <p class="leading-relaxed">Jeśli masz pytanie, uwagę do danych lub zauważysz błąd w działaniu strony, napisz do nas: <a id="contact-mail" href="#" class="text-gold-400 hover:underline font-semibold">napisz do nas e-mailem</a>. Przy zgłaszaniu błędu prosimy o podanie nazwy zakładki lub drużyny oraz krótkiego opisu problemu, najlepiej ze zrzutem ekranu.</p>
-        <p id="install-link-wrap" class="hidden"><a href="#" onclick="installApp(); return false;" class="text-gold-400 hover:underline font-semibold">📲 Zainstaluj aplikację na telefonie</a></p>
       </div>
       <div class="shrink-0 flex flex-col items-start md:items-end gap-1.5">
         <button type="button" id="a2hs-link" onclick="a2hsInstall()" class="text-gold-400 hover:underline font-semibold text-left">📲 Dodaj stronę do ekranu głównego</button>
@@ -803,21 +797,6 @@
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-
-  <div id="install-banner" class="install-banner" role="region" aria-label="Instalacja aplikacji">
-    <span aria-hidden="true">📲</span>
-    <span class="ib-text">Zainstaluj aplikację Szóstek na telefonie</span>
-    <button type="button" class="gate-btn primary" onclick="installApp()">Zainstaluj</button>
-    <button type="button" class="ib-close" aria-label="Zamknij" onclick="dismissInstallBanner()">×</button>
-  </div>
-
-  <div id="sheet" class="gate-overlay" hidden role="dialog" aria-modal="true" aria-labelledby="sheet-title">
-    <div class="gate-box">
-      <p class="gate-title" id="sheet-title"></p>
-      <p id="sheet-text" style="font-size: 0.85rem; line-height: 1.55; white-space: pre-line;"></p>
-      <div class="gate-actions"><button type="button" class="gate-btn primary" onclick="closeSheet()">OK</button></div>
-    </div>
-  </div>
 
   <!-- OKNO WERYFIKACJI (otwierane tylko po wpisaniu ustalonej frazy w wyszukiwarce drużyn) -->
   <div id="gate" class="gate-overlay" hidden role="dialog" aria-modal="true" aria-label="Weryfikacja">
@@ -2129,59 +2108,6 @@
       }
       try { await navigator.clipboard.writeText(url); toast('Skopiowano link'); }
       catch (e) { window.prompt('Skopiuj link:', url); }
-    }
-
-    // ---------- instalacja jako aplikacja ----------
-    let deferredInstall = null;
-    const INSTALL_DISMISS_KEY = 'szostki-install-dismissed';
-    const isStandalone = () => (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
-    const isIOSDevice = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-    function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
-    function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
-
-    function showInstallLink() {
-      const w = document.getElementById('install-link-wrap');
-      if (w && !isStandalone()) w.classList.remove('hidden');
-    }
-    function hideInstallUi() {
-      const w = document.getElementById('install-link-wrap'); if (w) w.classList.add('hidden');
-      const b = document.getElementById('install-banner'); if (b) b.classList.remove('show');
-    }
-    function maybeShowInstallBanner() {
-      if (isStandalone() || (!deferredInstall && !isIOSDevice)) return;
-      if (!(window.matchMedia && matchMedia('(max-width: 767px)').matches)) return;
-      if (Date.now() < Number(lsGet(INSTALL_DISMISS_KEY) || 0)) return;
-      setTimeout(() => { const b = document.getElementById('install-banner'); if (b) b.classList.add('show'); }, 3500);
-    }
-    function dismissInstallBanner() {
-      const b = document.getElementById('install-banner'); if (b) b.classList.remove('show');
-      lsSet(INSTALL_DISMISS_KEY, String(Date.now() + 30 * 864e5));
-    }
-    function openSheet(title, text) {
-      document.getElementById('sheet-title').textContent = title;
-      document.getElementById('sheet-text').textContent = text;
-      document.getElementById('sheet').hidden = false;
-    }
-    function closeSheet() { document.getElementById('sheet').hidden = true; }
-    async function installApp() {
-      const b = document.getElementById('install-banner'); if (b) b.classList.remove('show');
-      if (deferredInstall) {
-        const prompt = deferredInstall; deferredInstall = null;
-        prompt.prompt();
-        try { await prompt.userChoice; } catch (e) {}
-        hideInstallUi();
-        return;
-      }
-      openSheet('Dodaj do ekranu głównego', isIOSDevice
-        ? '1. Stuknij ikonę Udostępnij (kwadrat ze strzałką) w Safari.\n2. Wybierz „Dodaj do ekranu początkowego”.\n3. Stuknij „Dodaj”. Ikona pojawi się na ekranie głównym jak zwykła aplikacja.'
-        : 'Otwórz menu przeglądarki (⋮) i wybierz „Zainstaluj aplikację” albo „Dodaj do ekranu głównego”.');
-    }
-    window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredInstall = e; showInstallLink(); maybeShowInstallBanner(); });
-    window.addEventListener('appinstalled', () => { deferredInstall = null; hideInstallUi(); toast('Aplikacja zainstalowana'); });
-    document.addEventListener('keydown', e => { if (e.key === 'Escape') { const sh = document.getElementById('sheet'); if (sh && !sh.hidden) closeSheet(); } });
-    // service worker: strona działa też bez internetu (ostatnio wczytana wersja)
-    if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
-      window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
     }
 
     function switchTab(tab) {
@@ -4411,8 +4337,13 @@
       if (/Android/i.test(ua)) return 'android';
       return 'desktop';
     }
+    // przeglądarka wbudowana w Messengera / Facebooka / Instagram itp. nie potrafi dodać strony do ekranu głównego
+    function a2hsInApp() {
+      return /FBAN|FBAV|FB_IAB|Instagram|Messenger|Snapchat|TikTok|musical_ly|LinkedInApp|MicroMessenger|; wv\)/i.test(navigator.userAgent || '');
+    }
     function a2hsHelpText() {
       const p = a2hsPlatform();
+      if (a2hsInApp()) return '<ol class="a2hs-steps"><li>Ta strona jest otwarta w przeglądarce wbudowanej w aplikację (np. Messenger lub Facebook), która nie pozwala dodać jej do ekranu głównego.</li><li>Stuknij menu <b>⋮</b> lub <b>•••</b> i wybierz <b>„Otwórz w przeglądarce”</b> (Safari albo Chrome).</li><li>Dodaj stronę do ekranu głównego już stamtąd.</li></ol>';
       if (p === 'ios') return '<ol class="a2hs-steps"><li>W Safari stuknij ikonę <b>Udostępnij</b> (kwadrat ze strzałką w górę) na dole ekranu.</li><li>Przewiń listę i wybierz <b>„Do ekranu początkowego”</b>.</li><li>Stuknij <b>„Dodaj”</b>. Ikona pojawi się obok innych aplikacji.</li></ol>';
       if (p === 'android') return '<ol class="a2hs-steps"><li>Stuknij menu <b>⋮</b> w prawym górnym rogu przeglądarki.</li><li>Wybierz <b>„Zainstaluj aplikację”</b> albo <b>„Dodaj do ekranu głównego”</b>.</li><li>Potwierdź. Ikona pojawi się na ekranie głównym.</li></ol>';
       return '<ol class="a2hs-steps"><li>W Chrome lub Edge kliknij ikonę instalacji (monitor ze strzałką) po prawej stronie paska adresu.</li><li>Jeśli jej nie ma, otwórz menu <b>⋮</b> i wybierz <b>„Zainstaluj…”</b>.</li></ol>';
@@ -4450,6 +4381,15 @@
       const h = document.getElementById('a2hs-help');
       if (e.key === 'Escape' && h && !h.hidden) a2hsHelpClose();
     });
+    window.addEventListener('appinstalled', () => {
+      a2hsHide();
+      const l = document.getElementById('a2hs-link'); if (l) l.classList.add('hidden');
+      toast('Aplikacja zainstalowana');
+    });
+    // service worker: strona działa też bez internetu (ostatnio wczytana wersja)
+    if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+      window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
+    }
     (function () {
       a2hsRefresh();
       // pasek z zachętą: tylko telefony, nie w trybie aplikacji, po kilku sekundach; po odrzuceniu wraca za 7, potem co 14 dni
@@ -4591,7 +4531,6 @@
     window.addEventListener('DOMContentLoaded', async () => {
       initAllViews();
       applyRoute(true);
-      if (isIOSDevice) { showInstallLink(); maybeShowInstallBanner(); }
 
       const savedPowiat2027 = await loadFromDB("powiat2027");
       if (savedPowiat2027) {
