@@ -105,6 +105,9 @@
   </script>
   <!-- Chart.js, SheetJS i JSZip są używane dopiero po załadowaniu strony, więc "defer" nie blokuje jej rysowania.
        Chart.js jest przypięty do wersji głównej 4 (wcześniej "najnowsza" – wersja 5 mogłaby po cichu zepsuć wykresy). -->
+  <!-- Mapa drużyn: Leaflet (przypięta wersja 1.9.4), kafelki z OpenStreetMap -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
@@ -312,6 +315,41 @@
     /* komórka nagłówka ma ten sam odcień co reszta nagłówka (bg-slate-950/60) */
     thead .sticky-col { background-image: linear-gradient(rgb(13 12 10 / 0.6), rgb(13 12 10 / 0.6)); }
     html[data-theme="light"] thead .sticky-col { background-image: linear-gradient(rgb(243 238 225 / 0.6), rgb(243 238 225 / 0.6)); }
+  
+    /* ===== MAPA DRUŻYN ===== */
+    #team-map { background: #e9e2cf; z-index: 0; }
+    html[data-theme="dark"] #team-map { background: #14110c; }
+    html[data-theme="dark"] #team-map .leaflet-tile-pane { filter: invert(1) hue-rotate(185deg) brightness(.82) contrast(.9) saturate(.5) sepia(.28); }
+    html[data-theme="light"] #team-map .leaflet-tile-pane { filter: sepia(.3) saturate(.75) brightness(1.03) contrast(.96); }
+    #team-map .leaflet-control-attribution { background: var(--panel); color: var(--ink); opacity: .85; font-size: 10px; }
+    #team-map .leaflet-control-attribution a { color: inherit; text-decoration: underline; }
+    #team-map .leaflet-bar a { background: var(--panel); color: var(--ink); border-color: var(--panel-line); }
+    #team-map .leaflet-bar a:hover { background: var(--row-hover); }
+    .geo-pin { background: none; border: 0; }
+    .geo-logo { position: relative; display: inline-flex; align-items: center; justify-content: center; border-radius: 9999px; overflow: hidden;
+      background: var(--panel); color: var(--ink); border: 2px solid #c99a33; box-shadow: 0 2px 8px rgba(0,0,0,.45);
+      font-family: 'Barlow Condensed', 'Barlow', system-ui, sans-serif; font-weight: 800; letter-spacing: .02em; box-sizing: border-box; }
+    .geo-logo img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; padding: 2px; background: #fff; box-sizing: border-box; }
+    .geo-stack { position: relative; }
+    .geo-badge { position: absolute; right: -7px; top: -7px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 9999px; z-index: 5;
+      background: #c99a33; color: #1a1405; border: 2px solid var(--panel); font: 800 11px/16px 'Barlow', system-ui, sans-serif; text-align: center; box-sizing: border-box; }
+    .geo-ring .geo-logo { box-shadow: 0 3px 12px rgba(0,0,0,.55); }
+    .geo-center { position: absolute; transform: translate(-50%, -50%); white-space: nowrap; text-align: center; pointer-events: none;
+      font: 800 13px/1.1 'Barlow Condensed', 'Barlow', system-ui, sans-serif; letter-spacing: .03em; text-transform: uppercase;
+      color: #1a1405; background: #e2b64e; padding: 4px 9px; border-radius: 9999px; box-shadow: 0 2px 8px rgba(0,0,0,.4); }
+    .geo-center small { display: block; font: 700 9px/1.2 'Barlow', system-ui, sans-serif; text-transform: none; opacity: .75; letter-spacing: 0; }
+    .leaflet-tooltip.geo-tip { background: var(--panel); color: var(--ink); border: 1px solid var(--panel-line); border-radius: 10px; padding: 6px 9px;
+      font: 600 12px/1.3 'Barlow', system-ui, sans-serif; box-shadow: 0 6px 18px rgba(0,0,0,.35); }
+    .leaflet-tooltip-top.geo-tip::before { border-top-color: var(--panel-line); }
+    .geo-list { position: absolute; z-index: 800; right: 10px; top: 10px; bottom: 10px; width: min(300px, calc(100% - 20px)); display: flex; flex-direction: column;
+      background: var(--panel); color: var(--ink); border: 1px solid var(--panel-line); border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,.4); overflow: hidden; }
+    .geo-list-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--panel-line);
+      font-family: 'Barlow Condensed', 'Barlow', sans-serif; font-weight: 800; text-transform: uppercase; letter-spacing: .03em; }
+    #map-list-body { overflow-y: auto; padding: 6px; flex: 1; }
+    .geo-list-row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 6px 8px; border-radius: 10px; background: none; color: inherit; border: 0; cursor: pointer; }
+    .geo-list-row:hover { background: var(--row-hover); }
+    .geo-back { position: absolute; z-index: 900; left: 10px; top: 10px; padding: 8px 14px; border-radius: 9999px; border: 0; cursor: pointer;
+      background: #e2b64e; color: #1a1405; font: 800 12px 'Barlow', system-ui, sans-serif; box-shadow: 0 4px 14px rgba(0,0,0,.4); }
   </style>
 </head>
 <body class="min-h-screen flex flex-col selection:bg-gold-500 selection:text-slate-950">
@@ -364,8 +402,14 @@
         <button onclick="switchTab('powiat')" id="tab-powiat" class="px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 text-slate-300 hover:text-white whitespace-nowrap">
           👑 Mistrzostwa Powiatu
         </button>
+        <button onclick="switchTab('mapa')" id="tab-mapa" class="px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 text-slate-300 hover:text-white whitespace-nowrap">
+          🗺️ Mapa
+        </button>
         <button onclick="switchTab('stats')" id="tab-stats" class="hidden px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 text-slate-300 hover:text-white whitespace-nowrap">
           📊 Statystyki
+        </button>
+        <button onclick="switchTab('lokalizacje')" id="tab-lokalizacje" class="hidden px-3.5 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 text-slate-300 hover:text-white whitespace-nowrap">
+          📍 Lokalizacje
         </button>
       </nav>
       </div>
@@ -706,6 +750,43 @@
         </div>
       </div>
       <div id="stats-body"></div>
+    </div>
+
+    <!-- ZAKŁADKA: MAPA DRUŻYN -->
+    <div id="view-mapa" class="hidden space-y-3">
+      <div class="panel rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 class="text-xl text-white">Mapa drużyn</h2>
+          <p id="map-sub" class="text-[11px] text-slate-400 mt-0.5"></p>
+        </div>
+        <div class="flex items-center gap-2">
+          <button id="map-mode-active" onclick="setMapMode('active')" class="px-3.5 py-2 rounded-xl text-xs font-bold bg-gold-500 text-slate-950 transition">Aktywne</button>
+          <button id="map-mode-all" onclick="setMapMode('all')" class="px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-800 text-slate-300 hover:bg-slate-700 transition">Wszystkie</button>
+        </div>
+      </div>
+      <div class="panel rounded-2xl overflow-hidden relative">
+        <div id="team-map" style="height:min(74vh,680px);min-height:380px"></div>
+        <div id="map-status" class="absolute inset-0 flex items-center justify-center text-sm text-slate-400 text-center p-6 pointer-events-none" style="z-index:700"></div>
+        <button id="map-back" type="button" onclick="geoUnfocus()" class="geo-back hidden">← Wróć do całego powiatu</button>
+        <div id="map-list" class="geo-list hidden">
+          <div class="geo-list-head"><span id="map-list-title"></span><button type="button" onclick="geoUnfocus()" class="px-2 py-1 rounded-lg text-sm" aria-label="Zamknij listę">✕</button></div>
+          <div id="map-list-body"></div>
+        </div>
+      </div>
+      <p class="text-[11px] text-slate-500">Najedź na stos logo (na telefonie dotknij), żeby zobaczyć drużyny z danej miejscowości. Kliknięcie logo otwiera kartę drużyny.</p>
+    </div>
+
+    <!-- ZAKŁADKA (tylko tryb narzędzi): LOKALIZACJE DRUŻYN -->
+    <div id="view-lokalizacje" class="hidden space-y-4">
+      <div class="panel rounded-2xl p-4 space-y-3">
+        <div>
+          <h2 class="text-xl text-white">Lokalizacje drużyn</h2>
+          <p class="text-[11px] text-slate-400 mt-0.5">✅ jedna pasująca miejscowość w bazie • ⚠️ kilka (wybierz właściwą) • ❌ brak w bazie • ⬜ pusto w rankingu. Wybór zapisuje się dla wszystkich odwiedzających.</p>
+        </div>
+        <div id="loc-filters" class="flex flex-wrap gap-2"></div>
+        <input type="search" id="loc-filter-search" oninput="geoDrawLoc()" placeholder="Szukaj drużyny lub miejscowości…" autocomplete="off" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">
+      </div>
+      <div id="loc-body" class="space-y-2"></div>
     </div>
 
     <!-- 7. ZAKŁADKA: MISTRZOSTWA POWIATU (EDYCJA 1 - 2025, EDYCJA 2 - 2026, EDYCJA 3 - 2027) -->
@@ -1258,6 +1339,7 @@
       document.getElementById('portal-logo-wrapper').classList.add('cursor-pointer', 'ring-2', 'ring-gold-500');
       document.getElementById('portal-logo-wrapper').title = "Kliknij, aby wgrać główne logo Szóstek Powiatu";
       document.getElementById('tab-stats').classList.remove('hidden');
+      document.getElementById('tab-lokalizacje').classList.remove('hidden');
       Stats.markOwner();
       renderPowiatView();
     }
@@ -1267,7 +1349,8 @@
       document.getElementById('pro-toolbar').classList.remove('flex');
       document.getElementById('portal-logo-wrapper').classList.remove('cursor-pointer', 'ring-2', 'ring-gold-500');
       document.getElementById('tab-stats').classList.add('hidden');
-      if (STATE.activeTab === 'stats') switchTab('ranking');
+      document.getElementById('tab-lokalizacje').classList.add('hidden');
+      if (STATE.activeTab === 'stats' || STATE.activeTab === 'lokalizacje') switchTab('ranking');
       statsKeyMem = ''; try { sessionStorage.removeItem(STATS_KEY_STORE); } catch (e) {}
       renderPowiatView();
     }
@@ -1907,7 +1990,7 @@
       };
     })();
 
-    const STATS_TAB_NAMES = { ranking: 'Ranking ELO', matches: 'Ostatnie Mecze', team: 'Karta Drużyny', h2h: 'Porównywarka H2H', medals: 'Gablota Medalowa', competitions: 'Historia Rozgrywek', powiat: 'Mistrzostwa Powiatu' };
+    const STATS_TAB_NAMES = { ranking: 'Ranking ELO', matches: 'Ostatnie Mecze', team: 'Karta Drużyny', h2h: 'Porównywarka H2H', medals: 'Gablota Medalowa', competitions: 'Historia Rozgrywek', powiat: 'Mistrzostwa Powiatu', mapa: 'Mapa drużyn', lokalizacje: 'Lokalizacje (admin)' };
     const STATS_KEY_STORE = 'szostki-stats-key';
     let statsDays = 30, statsData = null, statsChart = null, statsLoading = false, statsKeyMem = '';
 
@@ -2041,8 +2124,8 @@
     //   https://szostkipiaseczynskie.pl/#mecze               -> zakładka "Ostatnie Mecze"
     // ============================================================================
     const SITE_TITLE = 'Szóstki Powiatu Piaseczyńskiego';
-    const ROUTE_TO_TAB = { ranking: 'ranking', mecze: 'matches', druzyna: 'team', h2h: 'h2h', gablota: 'medals', historia: 'competitions', powiat: 'powiat' };
-    const TAB_TO_ROUTE = { ranking: '', matches: 'mecze', team: 'druzyna', h2h: 'h2h', medals: 'gablota', competitions: 'historia', powiat: 'powiat' };
+    const ROUTE_TO_TAB = { ranking: 'ranking', mecze: 'matches', druzyna: 'team', h2h: 'h2h', gablota: 'medals', historia: 'competitions', powiat: 'powiat', mapa: 'mapa' };
+    const TAB_TO_ROUTE = { ranking: '', matches: 'mecze', team: 'druzyna', h2h: 'h2h', medals: 'gablota', competitions: 'historia', powiat: 'powiat', mapa: 'mapa' };
     const INITIAL_ROUTE = location.hash;   // zapamiętane, zanim cokolwiek się wyrenderuje
     let routeLock = true, routeDone = false;
 
@@ -2111,10 +2194,10 @@
     }
 
     function switchTab(tab) {
-      if (tab === 'stats' && !STATE.pro) tab = 'ranking';
+      if ((tab === 'stats' || tab === 'lokalizacje') && !STATE.pro) tab = 'ranking';
       STATE.activeTab = tab;
       Stats.tab(tab);
-      ['ranking', 'matches', 'team', 'h2h', 'medals', 'competitions', 'powiat', 'stats'].forEach(t => {
+      ['ranking', 'matches', 'team', 'h2h', 'medals', 'competitions', 'powiat', 'mapa', 'stats', 'lokalizacje'].forEach(t => {
         document.getElementById('view-' + t).classList.toggle('hidden', t !== tab);
         const btn = document.getElementById('tab-' + t);
         if (t === tab) {
@@ -2127,6 +2210,7 @@
       });
 
       document.getElementById('tab-stats').classList.toggle('hidden', !STATE.pro);
+      document.getElementById('tab-lokalizacje').classList.toggle('hidden', !STATE.pro);
 
       try {
         if (tab === 'ranking') renderRanking();
@@ -2140,6 +2224,8 @@
         }
         else if (tab === 'powiat') renderPowiatView();
         else if (tab === 'stats') renderStatsView();
+        else if (tab === 'mapa') renderMapView();
+        else if (tab === 'lokalizacje') renderLocationsView();
       } catch (err) {
         console.error("Błąd renderowania zakładki:", err);
       }
@@ -4596,6 +4682,520 @@
       }
       if (!routeDone) applyRoute(true);
     });
+
+    // ============================================================================
+    // MAPA DRUŻYN + PANEL LOKALIZACJI (zakładki „Mapa” i „Lokalizacje”)
+    // Dane: miejscowosci.json (OpenStreetMap, z repozytorium) + wybory admina z arkusza (STATS_URL ?a=l)
+    // ============================================================================
+    const GEO_URL = 'miejscowosci.json';
+    const GEO_CENTER = { lat: 52.0725, lon: 21.0233 };   // Piaseczno – do sortowania kandydatów
+    const GEO_TYPE_PL = { city: 'miasto', town: 'miasto', village: 'wieś', hamlet: 'przysiółek', suburb: 'osiedle' };
+    const GEO_RING_MAX = 18;                              // powyżej tylu drużyn zamiast koła pokazujemy listę
+    const GEO = { places: null, byName: new Map(), manual: new Map(), pPlaces: null, pManual: null, manualFailed: false };
+
+    function geoKm(a, b) {
+      const r = x => x * Math.PI / 180;
+      const h = Math.sin(r(b.lat - a.lat) / 2) ** 2 + Math.cos(r(a.lat)) * Math.cos(r(b.lat)) * Math.sin(r(b.lon - a.lon) / 2) ** 2;
+      return 6371 * 2 * Math.asin(Math.sqrt(h));
+    }
+
+    function geoLoadPlaces() {
+      if (GEO.places) return Promise.resolve(GEO.places);
+      if (!GEO.pPlaces) {
+        GEO.pPlaces = fetch(GEO_URL)
+          .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+          .then(d => {
+            const list = (d.miejscowosci || []).filter(p => p && p.nazwa && isFinite(p.lat) && isFinite(p.lon));
+            list.forEach(p => { p._k = normalizeKey(p.nazwa); p._d = geoKm(GEO_CENTER, p); });
+            list.sort((a, b) => a._d - b._d);          // bliżej Piaseczna = wyżej na listach wyboru
+            const m = new Map();
+            list.forEach(p => { if (!m.has(p._k)) m.set(p._k, []); m.get(p._k).push(p); });
+            GEO.byName = m; GEO.places = list;
+            return list;
+          })
+          .catch(err => { GEO.pPlaces = null; throw err; });
+      }
+      return GEO.pPlaces;
+    }
+
+    function geoLoadManual(force) {
+      if (GEO.pManual && !force) return GEO.pManual;
+      if (!STATS_URL) return Promise.resolve(GEO.manual);
+      GEO.pManual = fetch(STATS_URL + '?a=l&_=' + Date.now())
+        .then(r => r.json())
+        .then(d => {
+          const m = new Map();
+          (d.items || []).forEach(it => { if (it && it.team) m.set(it.team, it); });
+          GEO.manual = m; GEO.manualFailed = false;
+          return m;
+        })
+        .catch(() => { GEO.manualFailed = true; GEO.pManual = null; return GEO.manual; });
+      return GEO.pManual;
+    }
+    function geoLoadAll() { return Promise.all([geoLoadPlaces(), geoLoadManual()]); }
+
+    function geoLev(a, b) {
+      if (a === b) return 0;
+      let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+      for (let i = 1; i <= a.length; i++) {
+        const cur = [i];
+        for (let j = 1; j <= b.length; j++) {
+          cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+        }
+        prev = cur;
+      }
+      return prev[b.length];
+    }
+
+    // podobne nazwy (literówki, początek nazwy) – podpowiedzi dla miejscowości, której nie ma w bazie
+    function geoSuggest(city) {
+      const k = normalizeKey(city);
+      if (!k) return [];
+      const out = [];
+      GEO.byName.forEach((arr, key) => {
+        let near = 0;
+        if (k.length >= 3 && (key.startsWith(k) || k.startsWith(key))) near = 1;
+        else if (Math.abs(key.length - k.length) <= 2 && geoLev(key, k) <= (k.length > 6 ? 2 : 1)) near = 2;
+        if (near) arr.forEach(p => out.push({ p, near }));
+      });
+      out.sort((a, b) => a.near - b.near || a.p._d - b.p._d);
+      return out.slice(0, 10).map(x => x.p);
+    }
+
+    // wyszukiwanie w całej bazie (pole „Szukaj w bazie” w panelu)
+    function geoSearch(q) {
+      const k = normalizeKey(q);
+      if (k.length < 2) return [];
+      const out = [];
+      GEO.byName.forEach((arr, key) => {
+        const rank = key === k ? 0 : key.startsWith(k) ? 1 : key.includes(k) ? 2 : -1;
+        if (rank >= 0) arr.forEach(p => out.push({ p, rank }));
+      });
+      out.sort((a, b) => a.rank - b.rank || a.p._d - b.p._d);
+      return out.slice(0, 25).map(x => x.p);
+    }
+
+    // Status miejscowości drużyny: ok | choose (kilka pasujących) | missing (brak w bazie) | empty (pusto w rankingu)
+    function geoResolve(t) {
+      const city = String(t.city || '').trim();
+      const man = GEO.manual.get(t.name);
+      // wybór admina obowiązuje, dopóki wpisana w rankingu miejscowość się nie zmieni
+      if (man && normalizeKey(man.wpisana) === normalizeKey(city)) {
+        return { status: 'ok', source: 'manual', place: { nazwa: man.nazwa, gmina: man.gmina, powiat: man.powiat, lat: man.lat, lon: man.lon, typ: '' } };
+      }
+      if (!city) return { status: 'empty', candidates: [] };
+      const c = GEO.byName.get(normalizeKey(city)) || [];
+      if (c.length === 1) return { status: 'ok', source: 'auto', place: c[0] };
+      if (c.length > 1) return { status: 'choose', candidates: c };
+      return { status: 'missing', candidates: geoSuggest(city) };
+    }
+    function geoAll() { return STATE.teams.map(t => ({ t, r: geoResolve(t) })); }
+
+    function geoPlaceLine(p) {
+      const where = p.powiat === 'Warszawa' ? 'Warszawa, ' + p.gmina : (p.gmina ? 'gm. ' + p.gmina : '') + (p.powiat ? ', ' + p.powiat : '');
+      return where.replace(/^, /, '');
+    }
+
+    // ---------- logo drużyny jako okrągły znacznik ----------
+    function geoLogoHtml(t, s) {
+      const url = resolveTeamLogo(t.name);
+      const ini = statsEsc(String(t.name).split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase());
+      const img = url ? `<img src="${escapeHtmlAttr(url)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="this.remove()">` : '';
+      return `<span class="geo-logo" style="width:${s}px;height:${s}px;font-size:${Math.round(s * 0.36)}px">${ini}${img}</span>`;
+    }
+
+    // ---------- PANEL ADMINA: zakładka „Lokalizacje” ----------
+    const LOC = { filter: null, open: null, rows: [], cands: [], found: [], busy: false };
+    const LOC_FILTERS = [['all', 'Wszystkie'], ['choose', '⚠️ Do wyboru'], ['missing', '❌ Brak w bazie'], ['empty', '⬜ Bez miejscowości'], ['ok', '✅ OK']];
+
+    async function renderLocationsView() {
+      const body = document.getElementById('loc-body');
+      if (!STATE.pro || !body) return;
+      if (!body.dataset.ready) { body.dataset.ready = '1'; body.addEventListener('click', geoLocClick); }
+      body.innerHTML = '<div class="panel rounded-2xl p-6 text-sm text-slate-400">⏳ Wczytywanie bazy miejscowości…</div>';
+      try { await geoLoadAll(); }
+      catch (e) {
+        body.innerHTML = '<div class="panel rounded-2xl p-6 text-sm text-slate-300 space-y-2"><p>Nie udało się wczytać pliku <b>miejscowosci.json</b>.</p><p class="text-slate-400 text-xs">Sprawdź, czy plik leży w repozytorium obok index.html (GitHub → Add file → Upload files).</p></div>';
+        return;
+      }
+      geoDrawLoc();
+    }
+    function setLocFilter(f) { LOC.filter = f; LOC.open = null; geoDrawLoc(); }
+
+    function geoStatusBadge(r) {
+      if (r.status === 'ok') return '<span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/15 text-emerald-500">✅ OK</span>';
+      if (r.status === 'choose') return `<span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-500/20 text-amber-500">⚠️ Do wyboru (${r.candidates.length})</span>`;
+      if (r.status === 'missing') return '<span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-500/15 text-rose-500">❌ Brak w bazie</span>';
+      return '<span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-slate-500/20 text-slate-400">⬜ Bez miejscowości</span>';
+    }
+    function geoCandBtn(p, src, i) {
+      return `<button type="button" data-act="pick" data-src="${src}" data-c="${i}" class="w-full text-left px-3 py-2 rounded-xl border border-slate-700/70 hover:border-gold-500 transition">
+        <span class="text-sm font-bold text-white">${statsEsc(p.nazwa)}</span>
+        <span class="block text-[11px] text-slate-400">${statsEsc(geoPlaceLine(p))} · ${statsEsc(GEO_TYPE_PL[p.typ] || p.typ || '')} · ${Math.round(p._d != null ? p._d : geoKm(GEO_CENTER, p))} km od Piaseczna</span></button>`;
+    }
+
+    function geoDrawLoc() {
+      const body = document.getElementById('loc-body');
+      const fbox = document.getElementById('loc-filters');
+      if (!body || !fbox) return;
+      const all = geoAll();
+      const counts = { all: all.length, choose: 0, missing: 0, empty: 0, ok: 0 };
+      all.forEach(x => { counts[x.r.status]++; });
+      if (!LOC.filter) LOC.filter = counts.choose ? 'choose' : counts.missing ? 'missing' : counts.empty ? 'empty' : 'all';
+      fbox.innerHTML = LOC_FILTERS.map(([k, label]) =>
+        `<button type="button" onclick="setLocFilter('${k}')" class="px-3 py-1.5 rounded-xl text-xs font-bold transition ${k === LOC.filter ? 'bg-gold-500 text-slate-950' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}">${label} <span class="opacity-70">${counts[k]}</span></button>`).join('');
+      const q = normalizeKey((document.getElementById('loc-filter-search') || {}).value || '');
+      let rows = all.filter(x => (LOC.filter === 'all' || x.r.status === LOC.filter) &&
+        (!q || normalizeKey(x.t.name).includes(q) || normalizeKey(x.t.city).includes(q)));
+      rows.sort((a, b) => a.t.name.localeCompare(b.t.name, 'pl'));
+      LOC.rows = rows;
+      if (!rows.length) {
+        body.innerHTML = `<div class="panel rounded-2xl p-6 text-sm text-slate-400">${LOC.filter === 'all' ? 'Brak drużyn.' : 'Nic tu nie ma – wszystko w porządku. 🎉'}</div>`;
+        return;
+      }
+      const note = GEO.manualFailed ? '<div class="panel rounded-xl p-3 text-xs text-amber-500">Nie udało się pobrać zapisanych wyborów z arkusza – widzisz tylko dopasowania automatyczne.</div>' : '';
+      body.innerHTML = note + rows.map((x, i) => {
+        const t = x.t, r = x.r, open = LOC.open === t.name;
+        const chosen = r.status === 'ok'
+          ? `<span class="text-[11px] text-slate-300">📍 ${statsEsc(r.place.nazwa)} · ${statsEsc(geoPlaceLine(r.place))}${r.source === 'manual' ? ' · <b class="text-gold-400">wybrano ręcznie</b>' : ''}</span>` : '';
+        return `<div class="panel rounded-xl p-3">
+          <div class="flex items-center gap-3">
+            ${geoLogoHtml(t, 36)}
+            <div class="min-w-0 flex-1">
+              <div class="flex flex-wrap items-center gap-2"><span class="text-sm font-bold text-white truncate">${statsEsc(t.name)}</span>${geoStatusBadge(r)}${t.active ? '' : '<span class="text-[10px] text-slate-500">nieaktywna</span>'}</div>
+              <div class="text-[11px] text-slate-400">w rankingu: ${t.city ? '<b>' + statsEsc(t.city) + '</b>' : '<i>pusto</i>'}</div>
+              ${chosen}
+            </div>
+            <button type="button" data-act="open" data-i="${i}" class="shrink-0 px-3 py-1.5 rounded-xl text-xs font-bold ${r.status === 'ok' ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-gold-500 text-slate-950'} transition">${open ? 'Zamknij' : (r.status === 'ok' ? 'Zmień' : 'Wybierz')}</button>
+          </div>
+          ${open ? geoEditorHtml(t, r) : ''}
+        </div>`;
+      }).join('');
+    }
+
+    function geoEditorHtml(t, r) {
+      const head = r.status === 'choose' ? 'W bazie jest kilka takich miejscowości – wybierz właściwą:'
+        : r.status === 'missing' ? 'Takiej miejscowości nie ma w bazie. Podobne nazwy (sprawdź literówkę w rankingu) albo szukaj poniżej:'
+        : r.status === 'empty' ? 'Drużyna nie ma wpisanej miejscowości. Wyszukaj ją w bazie:'
+        : 'Wybierz inną miejscowość:';
+      const cands = LOC.cands.length ? LOC.cands.map((p, i) => geoCandBtn(p, 'c', i)).join('') : '';
+      const found = LOC.found.length ? LOC.found.map((p, i) => geoCandBtn(p, 'f', i)).join('') : '';
+      const del = (GEO.manual.get(t.name)) ? '<button type="button" data-act="del" class="px-3 py-1.5 rounded-xl text-xs font-bold bg-rose-500/15 text-rose-500 hover:bg-rose-500/25 transition">Usuń mój wybór</button>' : '';
+      return `<div class="mt-3 pt-3 border-t border-slate-700/50 space-y-2">
+        <p class="text-[11px] text-slate-400">${head}</p>
+        ${cands ? `<div class="space-y-1.5">${cands}</div>` : ''}
+        <input type="search" id="loc-db-search" placeholder="Szukaj w bazie miejscowości…" autocomplete="off" oninput="geoEditorSearch(this.value)" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">
+        <div id="loc-db-results" class="space-y-1.5">${found}</div>
+        <div class="flex flex-wrap gap-2">${del}</div>
+      </div>`;
+    }
+    function geoEditorSearch(q) {
+      LOC.found = geoSearch(q);
+      const box = document.getElementById('loc-db-results');
+      if (box) box.innerHTML = LOC.found.map((p, i) => geoCandBtn(p, 'f', i)).join('') || (q.trim().length >= 2 ? '<p class="text-[11px] text-slate-500">Nic nie znaleziono.</p>' : '');
+    }
+
+    function geoLocClick(e) {
+      const el = e.target.closest('[data-act]');
+      if (!el || LOC.busy) return;
+      const act = el.dataset.act;
+      if (act === 'open') {
+        const row = LOC.rows[+el.dataset.i];
+        if (!row) return;
+        if (LOC.open === row.t.name) { LOC.open = null; }
+        else {
+          LOC.open = row.t.name;
+          LOC.found = [];
+          LOC.cands = row.r.status === 'ok' ? (GEO.byName.get(normalizeKey(row.t.city)) || []) : (row.r.candidates || []);
+        }
+        geoDrawLoc();
+      } else if (act === 'pick') {
+        const p = (el.dataset.src === 'f' ? LOC.found : LOC.cands)[+el.dataset.c];
+        const t = STATE.teams.find(x => x.name === LOC.open);
+        if (p && t) geoSave(t, p);
+      } else if (act === 'del') {
+        const t = STATE.teams.find(x => x.name === LOC.open);
+        if (t) geoDelete(t);
+      }
+    }
+
+    async function geoPost(payload) {
+      const key = statsKey();
+      if (!key) { toast('Sesja wygasła – odblokuj tryb narzędzi ponownie'); return null; }
+      const res = await fetch(STATS_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(Object.assign({ key: key }, payload)) });
+      const d = await res.json();
+      if (!d.ok) {
+        if (d.error === 'unauthorized') { statsKeyMem = ''; try { sessionStorage.removeItem(STATS_KEY_STORE); } catch (e) {} toast('Nieprawidłowe hasło – odblokuj tryb narzędzi ponownie'); }
+        else toast('Nie udało się zapisać (' + (d.error || 'błąd') + ')');
+        return null;
+      }
+      return d;
+    }
+    async function geoSave(t, p) {
+      LOC.busy = true; toast('Zapisuję…');
+      try {
+        const d = await geoPost({ action: 'lokSet', team: t.name, wpisana: String(t.city || ''), place: { nazwa: p.nazwa, gmina: p.gmina, powiat: p.powiat, lat: p.lat, lon: p.lon } });
+        if (!d) return;
+        GEO.manual.set(t.name, { team: t.name, wpisana: String(t.city || ''), nazwa: p.nazwa, gmina: p.gmina, powiat: p.powiat, lat: p.lat, lon: p.lon });
+        GEO.pManual = Promise.resolve(GEO.manual);
+        LOC.open = null; MAP.drawn = false;
+        toast('Zapisano ✓');
+        geoDrawLoc();
+      } catch (e) { toast('Błąd połączenia – spróbuj ponownie'); }
+      finally { LOC.busy = false; }
+    }
+    async function geoDelete(t) {
+      LOC.busy = true;
+      try {
+        const d = await geoPost({ action: 'lokDel', team: t.name });
+        if (!d) return;
+        GEO.manual.delete(t.name);
+        LOC.open = null; MAP.drawn = false;
+        toast('Wybór usunięty');
+        geoDrawLoc();
+      } catch (e) { toast('Błąd połączenia – spróbuj ponownie'); }
+      finally { LOC.busy = false; }
+    }
+
+    // ---------- MAPA ----------
+    const GEO_HOVER = !!(window.matchMedia && window.matchMedia('(hover: hover) and (pointer: fine)').matches);
+    const MAP = { map: null, layer: null, ringLayer: null, groups: [], focus: null, saved: null, hoverT: 0, leaveT: 0, autoT: 0, cool: 0, mode: 'active', fitted: false, drawn: false };
+
+    function geoWaitLeaflet() {
+      return new Promise((res, rej) => {
+        const t0 = Date.now();
+        (function tick() {
+          if (window.L && window.L.map) return res();
+          if (Date.now() - t0 > 12000) return rej(new Error('Leaflet'));
+          setTimeout(tick, 150);
+        })();
+      });
+    }
+    function geoSize(z) { return z <= 9 ? 28 : z <= 10 ? 32 : z <= 11 ? 36 : z <= 12 ? 40 : 46; }
+
+    // Rozmieszczenie logo w kole(ach) wokół miejscowości: [dx, dy] w pikselach.
+    function geoRingOffsets(n, size) {
+      const gap = size + 8, out = [];
+      let left = n, r = Math.max(gap * 0.98, size * 1.15), idx = 0;
+      while (left > 0) {
+        const cap = Math.max(6, Math.floor(2 * Math.PI * r / gap));
+        const cnt = Math.min(left, cap);
+        const start = -Math.PI / 2 + (idx % 2 ? Math.PI / cnt : 0);
+        for (let i = 0; i < cnt; i++) {
+          const a = start + 2 * Math.PI * i / cnt;
+          out.push([Math.cos(a) * r, Math.sin(a) * r]);
+        }
+        left -= cnt; r += gap; idx++;
+      }
+      return out;
+    }
+
+    function geoStyleModeButtons() {
+      ['active', 'all'].forEach(m => {
+        const b = document.getElementById('map-mode-' + m);
+        if (b) b.className = 'px-3.5 py-2 rounded-xl text-xs font-bold transition ' + (m === MAP.mode ? 'bg-gold-500 text-slate-950' : 'bg-slate-800 text-slate-300 hover:bg-slate-700');
+      });
+    }
+    function setMapMode(mode) {
+      MAP.mode = mode;
+      geoStyleModeButtons();
+      if (MAP.map) { geoUnfocus(true); geoDrawMap(true); }
+    }
+
+    async function renderMapView() {
+      const status = document.getElementById('map-status');
+      const box = document.getElementById('team-map');
+      if (!box) return;
+      geoStyleModeButtons();
+      status.classList.remove('hidden');
+      status.textContent = '⏳ Ładowanie mapy…';
+      try { await geoWaitLeaflet(); await geoLoadAll(); }
+      catch (e) {
+        status.textContent = 'Nie udało się wczytać mapy. Sprawdź połączenie z internetem i odśwież stronę.';
+        return;
+      }
+      status.classList.add('hidden');
+      if (!MAP.map) geoInitMap(box);
+      geoUnfocus(true);
+      setTimeout(() => { MAP.map.invalidateSize(); geoDrawMap(!MAP.fitted); }, 40);
+    }
+
+    function geoInitMap(box) {
+      MAP.map = L.map(box, { minZoom: 8, maxZoom: 17, zoomSnap: 0.5, zoomControl: true, attributionControl: true });
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">współtwórcy OpenStreetMap</a>'
+      }).addTo(MAP.map);
+      MAP.layer = L.layerGroup().addTo(MAP.map);
+      MAP.map.setView([GEO_CENTER.lat, GEO_CENTER.lon], 10);
+      MAP.map.on('click', () => { if (MAP.focus) geoUnfocus(); });
+      MAP.map.on('zoomend', () => {
+        if (MAP.focus) { if (MAP.focus.drawn) geoDrawRing(); }
+        else geoDrawMap(false);
+      });
+      document.addEventListener('keydown', e => { if (e.key === 'Escape' && MAP.focus) geoUnfocus(); });
+      const lb = document.getElementById('map-list-body');
+      if (lb) lb.addEventListener('click', e => {
+        const el = e.target.closest('[data-i]');
+        if (el && MAP.focus) geoOpenTeam(MAP.focus.g.teams[+el.dataset.i].name);
+      });
+    }
+
+    function geoOpenTeam(name) { if (typeof openTeamProfile === 'function') openTeamProfile(name); }
+
+    function geoTeamTip(t) {
+      return `<b>${statsEsc(t.name)}</b><br>ELO ${Math.round(t.elo)}${t.city ? ' · ' + statsEsc(t.city) : ''}`;
+    }
+
+    function geoDrawMap(refit) {
+      if (!MAP.map) return;
+      const all = geoAll();
+      const shown = all.filter(x => x.r.status === 'ok' && (MAP.mode === 'all' || x.t.active));
+      const gm = new Map();
+      shown.forEach(({ t, r }) => {
+        const p = r.place, k = (+p.lat).toFixed(4) + ',' + (+p.lon).toFixed(4);
+        if (!gm.has(k)) gm.set(k, { lat: +p.lat, lon: +p.lon, place: p, teams: [], marker: null });
+        gm.get(k).teams.push(t);
+      });
+      MAP.groups = [...gm.values()];
+      MAP.groups.forEach(g => g.teams.sort((a, b) => b.elo - a.elo));
+      MAP.layer.clearLayers();
+      const S = geoSize(MAP.map.getZoom());
+      MAP.groups.forEach(g => geoAddGroupMarker(g, S));
+      MAP.drawn = true;
+
+      const total = all.length, placed = all.filter(x => x.r.status === 'ok').length;
+      const sub = document.getElementById('map-sub');
+      if (sub) {
+        const missing = total - placed;
+        sub.textContent = shown.length + ' ' + plural(shown.length, 'drużyna', 'drużyny', 'drużyn') + ' na mapie' +
+          (STATE.pro && missing ? ' • ' + missing + ' bez lokalizacji (zakładka Lokalizacje)' : '');
+      }
+      if (refit || !MAP.fitted) {
+        MAP.fitted = true;
+        if (MAP.groups.length) MAP.map.fitBounds(L.latLngBounds(MAP.groups.map(g => [g.lat, g.lon])), { padding: [48, 48], maxZoom: 11, animate: false });
+        else MAP.map.setView([GEO_CENTER.lat, GEO_CENTER.lon], 10, { animate: false });
+      }
+    }
+
+    function geoAddGroupMarker(g, S) {
+      const n = g.teams.length;
+      let html, w = S;
+      if (n === 1) {
+        html = geoLogoHtml(g.teams[0], S);
+      } else {
+        const k = Math.min(n, 3), off = Math.round(S * 0.3);
+        w = S + off * (k - 1);
+        let inner = '';
+        for (let i = k - 1; i >= 0; i--) inner += `<span style="position:absolute;left:${i * off}px;top:0">${geoLogoHtml(g.teams[i], S)}</span>`;
+        html = `<div class="geo-stack" style="width:${w}px;height:${S}px">${inner}<span class="geo-badge">${n}</span></div>`;
+      }
+      const m = L.marker([g.lat, g.lon], {
+        icon: L.divIcon({ className: 'geo-pin', html: html, iconSize: [w, S], iconAnchor: [w / 2, S / 2] }),
+        keyboard: false, riseOnHover: true
+      }).addTo(MAP.layer);
+      g.marker = m;
+      m.bindTooltip(n === 1 ? geoTeamTip(g.teams[0]) : `<b>${statsEsc(g.place.nazwa)}</b><br>${n} ${plural(n, 'drużyna', 'drużyny', 'drużyn')}`,
+        { direction: 'top', offset: [0, -Math.round(S / 2)], opacity: 1, className: 'geo-tip' });
+      if (n === 1) {
+        m.on('click', () => geoOpenTeam(g.teams[0].name));
+      } else {
+        m.on('click', () => geoFocus(g));
+        if (GEO_HOVER) {
+          m.on('mouseover', () => {
+            clearTimeout(MAP.leaveT);
+            if (MAP.focus || Date.now() < MAP.cool) return;
+            clearTimeout(MAP.hoverT);
+            MAP.hoverT = setTimeout(() => geoFocus(g), 320);   // krótkie opóźnienie, żeby przypadkowy ruch kursora nie ruszał mapy
+          });
+          m.on('mouseout', () => clearTimeout(MAP.hoverT));
+        }
+      }
+    }
+
+    function geoFocus(g) {
+      if (MAP.focus && MAP.focus.g === g) return;
+      geoClearRing(); geoHideList();
+      clearTimeout(MAP.hoverT); clearTimeout(MAP.leaveT); clearTimeout(MAP.autoT);
+      if (!MAP.saved) MAP.saved = { center: MAP.map.getCenter(), zoom: MAP.map.getZoom() };
+      const f = MAP.focus = { g: g, drawn: false, engaged: false };
+      if (g.marker) g.marker.setOpacity(0);
+      document.getElementById('map-back').classList.remove('hidden');
+      const target = Math.min(Math.max(MAP.map.getZoom() + 2, 13), 15);
+      if (g.marker) g.marker.closeTooltip();
+      let done = false;
+      const draw = force => {
+        if (done || MAP.focus !== f) return;
+        if (!force && MAP.map.getCenter().distanceTo(L.latLng(g.lat, g.lon)) > 30) return;   // to jeszcze nie koniec lotu
+        done = true; geoDrawRing();
+      };
+      const onEnd = () => { draw(false); if (done) MAP.map.off('moveend', onEnd); };
+      MAP.map.on('moveend', onEnd);
+      setTimeout(() => { MAP.map.off('moveend', onEnd); draw(true); }, 900);
+      MAP.map.flyTo([g.lat, g.lon], target, { duration: 0.6 });
+      // na komputerze: jeśli kursor nie trafi w koło logo, wracamy sami po chwili
+      if (GEO_HOVER) MAP.autoT = setTimeout(() => { if (MAP.focus === f && !f.engaged) geoUnfocus(); }, 3500);
+    }
+
+    function geoClearRing() {
+      if (MAP.ringLayer) { MAP.map.removeLayer(MAP.ringLayer); MAP.ringLayer = null; }
+    }
+    function geoHideList() {
+      const l = document.getElementById('map-list');
+      if (l) l.classList.add('hidden');
+    }
+
+    function geoDrawRing() {
+      const f = MAP.focus;
+      if (!f) return;
+      geoClearRing();
+      const g = f.g;
+      if (g.teams.length > GEO_RING_MAX) { f.drawn = true; geoShowList(g); return; }
+      const S = 46;
+      const c = MAP.map.latLngToLayerPoint([g.lat, g.lon]);
+      const offs = geoRingOffsets(g.teams.length, S);
+      MAP.ringLayer = L.layerGroup().addTo(MAP.map);
+      g.teams.forEach((t, i) => {
+        const ll = MAP.map.layerPointToLatLng(L.point(c.x + offs[i][0], c.y + offs[i][1]));
+        const m = L.marker(ll, {
+          icon: L.divIcon({ className: 'geo-pin geo-ring', html: geoLogoHtml(t, S), iconSize: [S, S], iconAnchor: [S / 2, S / 2] }),
+          zIndexOffset: 1000, keyboard: false, riseOnHover: true
+        }).addTo(MAP.ringLayer);
+        m.bindTooltip(geoTeamTip(t), { direction: 'top', offset: [0, -S / 2], opacity: 1, className: 'geo-tip' });
+        m.on('click', () => geoOpenTeam(t.name));
+        if (GEO_HOVER) {
+          m.on('mouseover', () => { f.engaged = true; clearTimeout(MAP.leaveT); clearTimeout(MAP.autoT); });
+          m.on('mouseout', () => { if (f.engaged) { clearTimeout(MAP.leaveT); MAP.leaveT = setTimeout(() => { if (MAP.focus === f) geoUnfocus(); }, 550); } });
+        }
+      });
+      L.marker([g.lat, g.lon], {
+        icon: L.divIcon({ className: 'geo-pin', html: `<div class="geo-center">${statsEsc(g.place.nazwa)}<small>${g.teams.length} ${plural(g.teams.length, 'drużyna', 'drużyny', 'drużyn')}</small></div>`, iconSize: [0, 0] }),
+        interactive: false, zIndexOffset: 900
+      }).addTo(MAP.ringLayer);
+      f.drawn = true;
+    }
+
+    function geoShowList(g) {
+      document.getElementById('map-list-title').textContent = g.place.nazwa + ' · ' + g.teams.length + ' ' + plural(g.teams.length, 'drużyna', 'drużyny', 'drużyn');
+      document.getElementById('map-list-body').innerHTML = g.teams.map((t, i) =>
+        `<button type="button" data-i="${i}" class="geo-list-row">${geoLogoHtml(t, 34)}<span class="min-w-0 flex-1 text-left"><span class="block text-sm font-bold truncate">${statsEsc(t.name)}</span><span class="block text-[11px] opacity-70">ELO ${Math.round(t.elo)}</span></span></button>`).join('');
+      document.getElementById('map-list').classList.remove('hidden');
+    }
+
+    function geoUnfocus(instant) {
+      clearTimeout(MAP.hoverT); clearTimeout(MAP.leaveT); clearTimeout(MAP.autoT);
+      geoClearRing(); geoHideList();
+      const f = MAP.focus, s = MAP.saved;
+      MAP.focus = null; MAP.saved = null;
+      MAP.cool = Date.now() + 900;
+      const back = document.getElementById('map-back');
+      if (back) back.classList.add('hidden');
+      if (f && f.g.marker) { try { f.g.marker.setOpacity(1); } catch (e) {} }
+      if (s && MAP.map) {
+        if (instant) MAP.map.setView(s.center, s.zoom, { animate: false });
+        else MAP.map.flyTo(s.center, s.zoom, { duration: 0.6 });
+      }
+    }
   </script>
 
   <!-- Cloudflare Web Analytics --><script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "4d20db7702f947ca8b95e5cb9904b104"}'></script><!-- End Cloudflare Web Analytics -->
