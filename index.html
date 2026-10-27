@@ -1484,10 +1484,9 @@
     // ============================================================================
     // STREFA KIBICA: obserwowane drużyny (max 3), liczba fanów, symulator awansu, grafika
     // Obserwowane drużyny trzymamy w localStorage telefonu. Na serwer (skrypt Google) idzie tylko anonimowy
-    // identyfikator urządzenia + nazwy obserwowanych drużyn – po to, żeby policzyć fanów dla kafelka „Najwięcej fanów”.
+    // identyfikator urządzenia + nazwy obserwowanych drużyn – po to, żeby policzyć fanów wyłącznie w panelu Statystyki (po haśle). Na stronie liczby kibiców nie są pokazywane.
     // ============================================================================
-    const FAV_KEY = 'szostki-fav', FAV_MAX = 3, FAN_ID_KEY = 'szostki-fan-id', FAN_CACHE_KEY = 'szostki-fans-cache';
-    const FANS = { counts: {}, loaded: false };
+    const FAV_KEY = 'szostki-fav', FAV_MAX = 3, FAN_ID_KEY = 'szostki-fan-id';
     let _fanPushT = 0;
 
     function favRaw() {
@@ -1538,43 +1537,8 @@
       if (!id || !STATS_URL) return;
       try {
         await fetch(STATS_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'fanSet', id, teams: favRaw() }) });
-        try { sessionStorage.removeItem(FAN_CACHE_KEY); } catch (e) {}
-        setTimeout(() => fanFetch(true), 1200);
       } catch (e) {}
     }
-    async function fanFetch(force) {
-      if (!STATS_URL) return;
-      if (!force) {
-        try {
-          const c = JSON.parse(sessionStorage.getItem(FAN_CACHE_KEY) || 'null');
-          if (c && c.counts && Date.now() - c.t < 600000) { FANS.counts = c.counts; FANS.loaded = true; fanApplied(); return; }
-        } catch (e) {}
-      }
-      try {
-        const res = await fetch(STATS_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'fans' }) });
-        const d = await res.json();
-        if (!d || !d.ok || !d.counts) return;
-        FANS.counts = d.counts; FANS.loaded = true;
-        try { sessionStorage.setItem(FAN_CACHE_KEY, JSON.stringify({ t: Date.now(), counts: d.counts })); } catch (e) {}
-        fanApplied();
-      } catch (e) {}
-    }
-    function fanApplied() {
-      try { setupKpiRotators(); } catch (e) {}
-      const el = document.getElementById('fan-count-slot');
-      if (el) el.innerHTML = fanCountHtml(STATE.selectedTeamCard);
-      if (STATE.activeTab === 'fans') renderFansView();
-    }
-    function fanCountHtml(name) {
-      const n = FANS.counts[name] || 0;
-      return n ? `<span class="text-[11px] font-semibold text-slate-400">⭐ ${n} ${plural(n, 'kibic', 'kibice', 'kibiców')}</span>` : '';
-    }
-    function fanTopList() {
-      return Object.keys(FANS.counts).map(n => ({ name: n, n: FANS.counts[n] }))
-        .filter(x => x.n > 0 && STATE.teams.some(t => t.name === x.name))
-        .sort((a, b) => b.n - a.n || (STATE.teams.find(t => t.name === b.name).elo - STATE.teams.find(t => t.name === a.name).elo));
-    }
-
     // ---------- wspólne pomocniki ----------
     function simPool(team) { return STATE.teams.filter(t => team.active ? t.active : true).slice().sort((a, b) => b.elo - a.elo); }
     function simPos(pool, name, override) {
@@ -1603,7 +1567,7 @@
             ${renderTeamAvatar(t.name, 'w-12 h-12', 'text-sm')}
             <div class="min-w-0 flex-1">
               <p class="font-extrabold text-base text-white truncate">${statsEsc(t.name)}</p>
-              <p class="text-[11px] text-slate-400">#${pos} w rankingu • <b class="text-gold-400">${t.elo.toFixed(1)} ELO</b>${t.city ? ' • ' + statsEsc(t.city) : ''}${FANS.counts[t.name] ? ' • ⭐ ' + FANS.counts[t.name] : ''}</p>
+              <p class="text-[11px] text-slate-400">#${pos} w rankingu • <b class="text-gold-400">${t.elo.toFixed(1)} ELO</b>${t.city ? ' • ' + statsEsc(t.city) : ''}</p>
             </div>
             ${favBtnHtml(t.name, false)}
           </div>
@@ -1618,7 +1582,6 @@
       const body = document.getElementById('fans-body');
       if (!body) return;
       const favs = favList();
-      const top = fanTopList().slice(0, 5);
       body.innerHTML = `
         ${favs.length ? `<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">${favs.map(favCardHtml).join('')}</div>` :
           `<div class="panel rounded-2xl p-6 text-center space-y-1"><p class="text-sm font-extrabold text-white">Nie obserwujesz jeszcze żadnej drużyny</p><p class="text-xs text-slate-400">Kliknij gwiazdkę przy drużynie w rankingu albo wyszukaj ją poniżej. Wybrane drużyny będą podświetlone na złoto w rankingu i na mapie.</p></div>`}
@@ -1627,13 +1590,6 @@
             <input id="fans-add" type="search" oninput="fansAddSearch(this.value)" placeholder="Wpisz nazwę drużyny…" autocomplete="off" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">
             <div id="fans-add-res" class="space-y-1"></div>
           </div>` : `<p class="text-[11px] text-slate-500 text-center">Obserwujesz maksymalną liczbę drużyn (${FAV_MAX}). Odznacz gwiazdkę, żeby zamienić którąś.</p>`}
-        ${top.length ? `<div class="panel rounded-2xl p-4 space-y-2">
-            <h3 class="text-sm font-extrabold text-white">Najwięcej kibiców</h3>
-            ${top.map((x, i) => `<div onclick="openTeamProfile('${escapeJsStr(x.name)}')" class="flex items-center gap-3 cursor-pointer row-hover rounded-xl px-2 py-1.5">
-                <span class="w-5 text-center text-xs font-extrabold text-gold-400">${i + 1}</span>${renderTeamAvatar(x.name, 'w-8 h-8', 'text-xs')}
-                <span class="flex-1 min-w-0 truncate text-sm font-bold text-white">${statsEsc(x.name)}</span>
-                <span class="text-xs font-bold text-slate-300">${x.n} ${plural(x.n, 'kibic', 'kibice', 'kibiców')}</span></div>`).join('')}
-          </div>` : ''}
         <a href="https://www.facebook.com/share/1CZCM6WUWF/?mibextid=wwXIfr" target="_blank" rel="noopener" class="panel rounded-2xl p-4 flex items-center gap-3 border-l-4 border-l-gold-500 hover:border-gold-400 transition">
           <span class="text-2xl" aria-hidden="true">👍</span>
           <span class="min-w-0 flex-1"><span class="block text-sm font-extrabold text-white">Obserwuj nas na Facebooku</span><span class="block text-[11px] text-slate-400">Wyniki, zdjęcia i ogłoszenia o turniejach – bądź na bieżąco.</span></span>
@@ -2445,8 +2401,31 @@
           <div class="panel rounded-2xl p-4 space-y-3"><h3 class="text-base text-white">Najczęściej oglądane drużyny</h3>${bars(d.teams, n => n)}</div>
           <div class="panel rounded-2xl p-4 space-y-3"><h3 class="text-base text-white">⚔️ Najczęstsze porównania H2H</h3>${bars(d.h2h || [], n => n)}</div>
           <div class="panel rounded-2xl p-4 space-y-3"><h3 class="text-base text-white">Urządzenia</h3>${bars([{ name: 'Telefon (' + pct(dev.mobile) + '%)', count: dev.mobile }, { name: 'Komputer (' + pct(dev.desktop) + '%)', count: dev.desktop }], n => n)}</div>
-        </div>`;
+        </div>
+        <div id="stats-fans" class="panel rounded-2xl p-4 mt-4"><h3 class="text-base text-white">⭐ Kibice – obserwowane drużyny</h3><p class="text-xs text-slate-400 mt-2">⏳ Ładowanie…</p></div>`;
+      loadStatsFans();
       drawStatsChart(d);
+    }
+    // Kibice liczeni tylko tutaj (wymaga hasła, nic nie trafia na publiczną część strony)
+    async function loadStatsFans() {
+      const box = document.getElementById('stats-fans');
+      if (!box) return;
+      const key = statsKey();
+      const head = '<h3 class="text-base text-white">⭐ Kibice – obserwowane drużyny</h3>';
+      if (!key || !STATS_URL) { box.innerHTML = head; return; }
+      try {
+        const res = await fetch(STATS_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'fans', key: key }) });
+        const d = await res.json();
+        if (!d || !d.ok || !d.counts) throw new Error((d && d.error) || 'brak danych');
+        const list = Object.keys(d.counts).map(n => ({ name: n, n: d.counts[n] })).sort((a, b) => b.n - a.n || a.name.localeCompare(b.name, 'pl'));
+        const devices = Number(d.devices || 0).toLocaleString('pl-PL');
+        if (!list.length) { box.innerHTML = head + '<p class="text-xs text-slate-400 mt-2">Nikt jeszcze nie obserwuje żadnej drużyny.</p>'; return; }
+        const max = list[0].n || 1;
+        box.innerHTML = head + `<p class="text-[11px] text-slate-500 mt-1">Urządzeń z obserwowanymi drużynami: ${devices} • każde urządzenie max 3 drużyny</p><div class="space-y-2 mt-3">` +
+          list.slice(0, 30).map(x => `<div class="space-y-1"><div class="flex justify-between gap-3 text-xs"><span class="text-slate-300 truncate">${statsEsc(x.name)}</span><span class="font-bold text-white">${x.n}</span></div><div class="h-1.5 rounded-full bg-slate-800 overflow-hidden"><div class="h-full bg-gold-500" style="width:${Math.max(4, Math.round(x.n / max * 100))}%"></div></div></div>`).join('') + '</div>';
+      } catch (err) {
+        box.innerHTML = head + `<p class="text-xs text-rose-400 mt-2">Nie udało się pobrać liczników (${statsEsc(err && err.message || err)}). Sprawdź, czy skrypt Google ma nową wersję wdrożenia.</p>`;
+      }
     }
     function drawStatsChart(d) {
       const cv = document.getElementById('stats-chart');
@@ -3154,7 +3133,7 @@
                 </span>
                 <h2 class="text-xl md:text-2xl font-extrabold text-white mt-1">${team.name}</h2>
                 <div id="team-loc-slot" class="text-xs text-slate-400">📍 ${team.city ? statsEsc(team.city) : 'Brak przypisanej miejscowości'}</div>
-                <div class="flex flex-wrap items-center gap-2 pt-2">${favBtnHtml(team.name, true)}<span id="fan-count-slot">${fanCountHtml(team.name)}</span></div>
+                <div class="flex flex-wrap items-center gap-2 pt-2">${favBtnHtml(team.name, true)}</div>
               </div>
             </div>
 
@@ -4690,11 +4669,9 @@
       const peakTeam = [...STATE.teams].sort((a, b) => b.peak - a.peak)[0];
       const trwa = (t, cur, best) => (cur === best && best > 0 && f.activeNames.has(t.name)) ? ' • trwa' : '';
       const ml = f.medals[0];
-      const topFan = (typeof fanTopList === 'function') ? fanTopList()[0] : null;
       const right = [
         peakTeam ? { icon: '🔥', label: 'Rekord ELO (Peak)', value: peakTeam.name, sub: `${peakTeam.peak.toFixed(1)} pkt` } : null,
         f.champ ? { icon: '🏆', label: 'Obecny Mistrz Powiatu', value: f.champ, sub: `Mistrz powiatu ${joinYears(f.champYears)}` } : null,
-        topFan ? { icon: '⭐', label: 'Najwięcej Fanów', value: topFan.name, sub: `${topFan.n} ${plural(topFan.n, 'kibic', 'kibice', 'kibiców')} na stronie` } : null,
         f.topWins && f.topWins.w ? { icon: '💪', label: 'Najwięcej Zwycięstw', value: f.topWins.name, sub: `${fmt(f.topWins.w)} ${plural(f.topWins.w, 'zwycięstwo', 'zwycięstwa', 'zwycięstw')} w historii` } : null,
         f.form ? { icon: '📈', label: 'Forma Miesiąca', value: f.form.name, sub: `${f.monthLabel}: +${f.form.gain.toFixed(1)} ELO` } : null,
         f.recW && f.recW.bestW ? { icon: '⚡', label: 'Rekord Serii Zwycięstw', value: f.recW.name, sub: `${f.recW.bestW} ${plural(f.recW.bestW, 'zwycięstwo', 'zwycięstwa', 'zwycięstw')} z rzędu${trwa(f.recW, f.recW.curW, f.recW.bestW)}` } : null,
@@ -4941,7 +4918,6 @@
       try { renderMedals(); } catch (e) { console.error(e); }
       try { populateHistoryFilters(); } catch (e) { console.error(e); }
       try { renderPowiatView(); } catch (e) { console.error(e); }
-      try { fanFetch(); } catch (e) { console.error(e); }
     }
 
     // Zamykanie rozwijanych list po kliknięciu poza nimi
