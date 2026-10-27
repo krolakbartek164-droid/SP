@@ -55,6 +55,7 @@
       window.applyChartTheme = function () {
         try {
           if (window.statsChartTheme) window.statsChartTheme();
+          if (window.favChartTheme) window.favChartTheme();
           if (typeof eloChartInstance === 'undefined' || !eloChartInstance) return;
           var ds = eloChartInstance.data.datasets[0], sc = eloChartInstance.options.scales;
           ds.borderColor = themeColor('--chart-line');
@@ -539,7 +540,7 @@
       <div class="min-w-0">
         <p id="kpi-matches-label" class="kpi-fade text-[11px] uppercase tracking-wider text-slate-400 font-semibold leading-snug line-clamp-2">Rozegrane Mecze</p>
         <p id="kpi-matches" class="kpi-fade text-2xl font-extrabold text-white mt-0.5">1 650</p>
-        <p id="kpi-matches-sub" class="kpi-fade text-xs text-slate-400 line-clamp-2">W oficjalnej bazie</p>
+        <p id="kpi-matches-sub" class="kpi-fade text-xs text-slate-400 line-clamp-2">W bazie</p>
       </div>
       <div class="flex flex-col items-end justify-between self-stretch shrink-0">
         <div id="kpi-matches-icon" class="kpi-fade text-xl">⚽</div>
@@ -1482,7 +1483,7 @@
     }
 
     // ============================================================================
-    // STREFA KIBICA: obserwowane drużyny (max 3), liczba fanów, symulator awansu, grafika
+    // STREFA KIBICA: obserwowane drużyny (max 3), liczba fanów, od ostatniej wizyty, wykres ELO, grafika
     // Obserwowane drużyny trzymamy w localStorage telefonu. Na serwer (skrypt Google) idzie tylko anonimowy
     // identyfikator urządzenia + nazwy obserwowanych drużyn – po to, żeby policzyć fanów wyłącznie w panelu Statystyki (po haśle). Na stronie liczby kibiców nie są pokazywane.
     // ============================================================================
@@ -1547,7 +1548,7 @@
     }
     // ostatnie n meczów drużyny: od najstarszego do najnowszego -> 'W' / 'R' / 'P'
     function formArr(name, n) {
-      return STATE.matches.filter(m => m.teamA === name || m.teamB === name).slice(0, n).reverse().map(m => {
+      return STATE.matches.filter(m => (m.teamA === name || m.teamB === name) && !isSparingMatch(m)).slice(0, n).reverse().map(m => {
         const res = m.teamA === name ? m.resA : (1 - m.resA);
         return res === 1 ? 'W' : res === 0.5 ? 'R' : 'P';
       });
@@ -1578,13 +1579,115 @@
           </div>
         </div>`;
     }
+
+    // ---------- "od Twojej ostatniej wizyty" (migawka stanu obserwowanych drużyn trzymana w przeglądarce) ----------
+    const FAV_SEEN_KEY = 'szostki-fav-seen';
+    let FAV_BASE;   // undefined = jeszcze nie wczytano; null = brak poprzedniej wizyty
+    function favSnapshot() {
+      const teams = {};
+      favList().forEach(t => {
+        const ms = STATE.matches.filter(m => m.teamA === t.name || m.teamB === t.name);
+        teams[t.name] = { elo: t.elo, pos: simPool(t).findIndex(x => x.name === t.name) + 1, last: ms.reduce((mx, m) => Math.max(mx, m.order || 0), 0) };
+      });
+      return { t: Date.now(), teams };
+    }
+    function favSaveSnapshot() {
+      if (FAV_BASE === undefined || !favRaw().length) return;
+      try { localStorage.setItem(FAV_SEEN_KEY, JSON.stringify(favSnapshot())); } catch (e) {}
+    }
+    window.addEventListener('pagehide', favSaveSnapshot);
+    function favSinceHtml(favs) {
+      if (!favs.length) return '';
+      if (FAV_BASE === undefined) {
+        try { FAV_BASE = JSON.parse(localStorage.getItem(FAV_SEEN_KEY) || 'null'); } catch (e) { FAV_BASE = null; }
+        if (!FAV_BASE || !FAV_BASE.teams) FAV_BASE = null;
+        favSaveSnapshot();   // od tej chwili liczymy kolejną wizytę
+      }
+      const head = t => `<h3 class="text-sm font-extrabold text-white">Od Twojej ostatniej wizyty${t ? ' <span class="text-slate-400 font-semibold">(' + statsEsc(plDate(new Date(t).toISOString())) + ')</span>' : ''}</h3>`;
+      if (!FAV_BASE) return `<div class="panel rounded-2xl p-4 space-y-1">${head()}<p class="text-[11px] text-slate-400">Od teraz pokażemy tu, co zmieniło się u Twoich drużyn (ELO, miejsce w rankingu, nowe mecze) od Twojej ostatniej wizyty w tej zakładce.</p></div>`;
+      let any = false;
+      const rows = favs.map(t => {
+        const b = FAV_BASE.teams[t.name];
+        if (!b) return '';
+        const dElo = t.elo - b.elo, pos = simPool(t).findIndex(x => x.name === t.name) + 1, dPos = b.pos - pos;
+        const allNew = STATE.matches.filter(m => (m.teamA === t.name || m.teamB === t.name) && (m.order || 0) > b.last);
+        const fresh = allNew.slice(0, 3), nNew = allNew.length;
+        if (!nNew && Math.abs(dElo) < 0.05 && !dPos) return '';
+        any = true;
+        const eloCls = dElo > 0.05 ? 'text-emerald-400' : dElo < -0.05 ? 'text-rose-400' : 'text-slate-300';
+        const posTxt = dPos > 0 ? `<span class="text-emerald-400">▲ ${dPos}</span>` : dPos < 0 ? `<span class="text-rose-400">▼ ${-dPos}</span>` : '<span class="text-slate-400">bez zmian</span>';
+        return `<div class="bg-slate-950 border border-slate-800/90 rounded-xl px-3 py-2.5 space-y-1.5">
+            <div class="flex items-center gap-2">${renderTeamAvatar(t.name, 'w-7 h-7', 'text-[10px]')}<span class="flex-1 min-w-0 truncate text-sm font-bold text-white">${statsEsc(t.name)}</span>
+              <span class="text-xs font-extrabold ${eloCls}">${dElo >= 0 ? '+' : ''}${dElo.toFixed(1)} ELO</span></div>
+            <div class="text-[11px] text-slate-400">Miejsce w rankingu: #${pos} (${posTxt}) • ${nNew ? nNew + ' ' + plural(nNew, 'nowy mecz', 'nowe mecze', 'nowych meczów') : 'brak nowych meczów'}</div>
+            ${fresh.map(m => `<div class="text-[12px] text-slate-200">${statsEsc(m.teamA)} <b>${statsEsc(m.goalsA)}:${statsEsc(m.goalsB)}</b> ${statsEsc(m.teamB)} <span class="text-slate-500">• ${statsEsc(plDate(m.date))}</span></div>`).join('')}
+          </div>`;
+      }).join('');
+      return `<div class="panel rounded-2xl p-4 space-y-2.5">${head(FAV_BASE.t)}${any ? rows : '<p class="text-[11px] text-slate-400">Bez zmian – żadnych nowych meczów ani ruchu w rankingu u Twoich drużyn.</p>'}</div>`;
+    }
+
+    // ---------- wykres ELO obserwowanych drużyn ----------
+    const FAV_CHART = { inst: null, range: 10 };
+    function favChartColors() {
+      return document.documentElement.getAttribute('data-theme') === 'light' ? ['#b8851f', '#1f8a7e', '#4059c4'] : ['#e2b64e', '#5fc4b8', '#8fa8ff'];
+    }
+    function favChartSetRange(n) { FAV_CHART.range = n; drawFavChart(); }
+    function favChartRangeBtns() {
+      return [[10, 'Ostatnie 10 meczów'], [0, 'Cała historia']].map(([n, l]) => `<button type="button" onclick="favChartSetRange(${n})" class="pill-btn" style="${FAV_CHART.range === n ? 'border-color:#e2b64e;color:#e2b64e' : ''}">${l}</button>`).join('');
+    }
+    function drawFavChart() {
+      const cv = document.getElementById('favEloChart');
+      if (FAV_CHART.inst) { FAV_CHART.inst.destroy(); FAV_CHART.inst = null; }
+      const favs = favList();
+      if (!cv || !favs.length) return;
+      if (typeof Chart === 'undefined') { setTimeout(drawFavChart, 400); return; }
+      const btns = document.getElementById('fav-chart-range'); if (btns) btns.innerHTML = favChartRangeBtns();
+      const series = favs.map(t => {
+        let h = STATE.matches.filter(m => m.teamA === t.name || m.teamB === t.name).slice().reverse()
+          .map(m => ({ date: String(m.date), elo: m.teamA === t.name ? m.eloPostA : m.eloPostB }));
+        if (FAV_CHART.range) h = h.slice(-FAV_CHART.range);
+        const byDate = new Map(); h.forEach(x => byDate.set(x.date, x.elo));   // kilka meczów w dniu -> ostatnie ELO
+        return { t, byDate };
+      });
+      const dates = [...new Set(series.flatMap(x => [...x.byDate.keys()]))].sort();
+      const cols = favChartColors();
+      FAV_CHART.inst = new Chart(cv.getContext('2d'), {
+        type: 'line',
+        data: { labels: dates.map(plDate), datasets: series.map((x, i) => ({
+          label: x.t.name, data: dates.map(d => x.byDate.has(d) ? x.byDate.get(d) : null), spanGaps: true,
+          borderColor: cols[i], backgroundColor: cols[i], borderWidth: 2.5, pointRadius: 3, tension: 0.25 })) },
+        options: {
+          responsive: true, maintainAspectRatio: false, interaction: { mode: 'nearest', intersect: false },
+          plugins: { legend: { labels: { color: themeColor('--chart-tick-y') } }, tooltip: { callbacks: { label: c => `${c.dataset.label}: ${Number(c.parsed.y).toFixed(1)} ELO` } } },
+          scales: {
+            x: { ticks: { color: themeColor('--chart-tick-x'), maxTicksLimit: 8 }, grid: { color: themeColor('--chart-grid') } },
+            y: { ticks: { color: themeColor('--chart-tick-y') }, grid: { color: themeColor('--chart-grid') } }
+          }
+        }
+      });
+    }
+    window.favChartTheme = function () {
+      const c = FAV_CHART.inst; if (!c) return;
+      const cols = favChartColors();
+      c.data.datasets.forEach((d, i) => { d.borderColor = cols[i]; d.backgroundColor = cols[i]; });
+      c.options.plugins.legend.labels.color = themeColor('--chart-tick-y');
+      c.options.scales.x.ticks.color = themeColor('--chart-tick-x'); c.options.scales.x.grid.color = themeColor('--chart-grid');
+      c.options.scales.y.ticks.color = themeColor('--chart-tick-y'); c.options.scales.y.grid.color = themeColor('--chart-grid');
+      c.update();
+    };
+
     function renderFansView() {
       const body = document.getElementById('fans-body');
       if (!body) return;
       const favs = favList();
       body.innerHTML = `
+        ${favSinceHtml(favs)}
         ${favs.length ? `<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">${favs.map(favCardHtml).join('')}</div>` :
           `<div class="panel rounded-2xl p-6 text-center space-y-1"><p class="text-sm font-extrabold text-white">Nie obserwujesz jeszcze żadnej drużyny</p><p class="text-xs text-slate-400">Kliknij gwiazdkę przy drużynie w rankingu albo wyszukaj ją poniżej. Wybrane drużyny będą podświetlone na złoto w rankingu i na mapie.</p></div>`}
+        ${favs.length ? `<div class="panel rounded-2xl p-4 space-y-3">
+            <div class="flex flex-wrap items-center justify-between gap-2"><h3 class="text-sm font-extrabold text-white">Wykres ELO Twoich drużyn</h3><div id="fav-chart-range" class="flex gap-2"></div></div>
+            <div style="position:relative;height:260px"><canvas id="favEloChart"></canvas></div>
+          </div>` : ''}
         ${favs.length < FAV_MAX ? `<div class="panel rounded-2xl p-4 space-y-2">
             <p class="text-sm font-bold text-white">Dodaj drużynę <span class="text-slate-400 font-semibold">(${favs.length}/${FAV_MAX})</span></p>
             <input id="fans-add" type="search" oninput="fansAddSearch(this.value)" placeholder="Wpisz nazwę drużyny…" autocomplete="off" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">
@@ -1595,6 +1698,7 @@
           <span class="min-w-0 flex-1"><span class="block text-sm font-extrabold text-white">Obserwuj nas na Facebooku</span><span class="block text-[11px] text-slate-400">Wyniki, zdjęcia i ogłoszenia o turniejach – bądź na bieżąco.</span></span>
           <span class="pill-btn shrink-0">Otwórz</span>
         </a>`;
+      try { drawFavChart(); } catch (e) { console.warn(e); }
     }
     function fansAddSearch(q) {
       const box = document.getElementById('fans-add-res');
@@ -2201,7 +2305,8 @@
     }
 
     // Sparing = mecz towarzyski: w nazwie rozgrywek lub poziomu występuje "sparing" (np. "Sparing", "Sparingi").
-    // Sparingi wpływają na ELO (liczy je arkusz), ale NIE wliczają się do zwycięstw, bramek, serii i najczęstszego rywala.
+    // Sparingi wpływają na ELO (liczy je arkusz) i wliczają się do meczów, zwycięstw, bramek i najczęstszego rywala,
+    // ale NIE wliczają się do aktualnej formy (kółka W/R/P) ani do serii (bez porażki / zwycięstw).
     function isSparingMatch(m) {
       return String(m.comp || '').toLowerCase().includes('sparing') || String(m.tier || '').toLowerCase().includes('sparing');
     }
@@ -2606,27 +2711,74 @@
     // ============================================================================
     // 1. FILTR GMINY / POWIATY -> MIEJSCOWOŚCI W RANKINGU ELO (TYLKO GŁÓWNE)
     // ============================================================================
+    // Miejscowość drużyny bierzemy z tego samego źródła i tą samą ścieżką co mapa (geoResolve: miejscowosci.json + wybory admina z arkusza).
+    // Powiat piaseczyński -> nagłówki gmin; inne powiaty -> jeden nagłówek "Powiat X" (jak Grójecki / Pruszkowski);
+    // Warszawa -> "Warszawa". Gdy plik się nie wczytał albo drużyny nie ma w bazie, działa dawna lista MAIN_LOCATION_GROUPS.
+    function locCap(s) { s = String(s || '').trim(); return s.charAt(0).toUpperCase() + s.slice(1); }
+    function locGroupOfPlace(p) {
+      const powiat = String(p.powiat || '').replace(/^powiat\s+/i, '').trim();
+      const gmina = String(p.gmina || '').replace(/^gmina\s+/i, '').trim();
+      const pk = normalizeKey(powiat);
+      if (pk.startsWith('piaseczyn') && gmina) return { label: 'Gmina ' + gmina, icon: '🏛️' };
+      if (pk === 'warszawa') return { label: 'Warszawa', icon: '🛡️' };
+      if (powiat) return { label: 'Powiat ' + locCap(powiat), icon: '🛡️' };
+      return null;
+    }
+    function locSeedGroups() {   // sześć gmin powiatu piaseczyńskiego pokazujemy zawsze, nawet gdy nie mają drużyn
+      return MAIN_LOCATION_GROUPS.filter(g => /^Gmina /.test(g.gmina)).map(g => ({ label: g.gmina, icon: g.icon || '🏛️' }));
+    }
+    // -> { group, label } albo null (drużyna bez miejscowości)
+    function locOfTeam(t) {
+      if (GEO.places) {
+        const r = geoResolve(t);
+        const place = r.status === 'ok' ? r.place : null;   // dokładnie jak mapa: jedna pasująca albo wybór admina z zakładki Lokalizacje
+        const g = place && locGroupOfPlace(place);
+        if (g && place.nazwa) return { group: g.label, icon: g.icon, label: place.nazwa };
+      }
+      const city = String(t.city || '').trim();
+      if (city) {
+        const def = MAIN_LOCATION_GROUPS.find(d => d.cities.includes(city));
+        if (def) return { group: def.gmina, icon: def.icon || '🏛️', label: city };
+      }
+      return null;
+    }
+
     function getGminaStructureForCurrentTeams() {
       const relevantTeams = STATE.teams.filter(t => STATE.rankingMode === 'active' ? t.active : true);
-      const cityCounts = {};
+      const groups = new Map();
+      const add = (label, icon) => { if (!groups.has(label)) groups.set(label, { gmina: label, icon, cityCounts: {}, totalCount: 0 }); return groups.get(label); };
+      locSeedGroups().forEach(g => add(g.label, g.icon));
+      const seeded = new Set(groups.keys());
       relevantTeams.forEach(t => {
-        if (t.city) cityCounts[t.city] = (cityCounts[t.city] || 0) + 1;
+        const L = locOfTeam(t);
+        if (!L) return;
+        const g = add(L.group, L.icon);
+        g.cityCounts[L.label] = (g.cityCounts[L.label] || 0) + 1;
+        g.totalCount++;
       });
-
-      const mainList = MAIN_LOCATION_GROUPS.map(def => {
-        const activeCitiesInGmina = def.cities.filter(c => cityCounts[c] > 0);
-        const totalInGmina = activeCitiesInGmina.reduce((acc, c) => acc + (cityCounts[c] || 0), 0);
-        return {
-          gmina: def.gmina,
-          icon: def.icon || "🏛️",
-          allCities: def.cities,
-          presentCities: activeCitiesInGmina,
-          cityCounts,
-          totalCount: totalInGmina
-        };
+      const cmp = (a, b) => String(a).localeCompare(String(b), 'pl');
+      const mainList = [...groups.values()].map(g => ({
+        ...g,
+        presentCities: Object.keys(g.cityCounts).sort((a, b) => g.cityCounts[b] - g.cityCounts[a] || cmp(a, b))
+      })).sort((a, b) => {
+        const sa = seeded.has(a.gmina), sb = seeded.has(b.gmina);
+        if (sa !== sb) return sa ? -1 : 1;
+        return sa ? 0 : (a.icon === b.icon ? cmp(a.gmina, b.gmina) : (a.icon === '🏛️' ? -1 : 1));   // seed zostaje w swojej kolejności; reszta: gminy, potem powiaty
       });
+      return { mainList };
+    }
 
-      return { mainList, cityCounts };
+    // plik miejscowosci.json ładujemy dopiero przy pierwszym otwarciu filtra, potem odświeżamy listę i ranking
+    let _locLoading = false;
+    function locEnsure() {
+      if (GEO.places || _locLoading) return;
+      _locLoading = true;
+      geoLoadAll().then(() => {
+        _locLoading = false;
+        const menu = document.getElementById('location-dropdown-menu');
+        if (menu && !menu.classList.contains('hidden')) buildLocationDropdownMenu();
+        renderRanking();
+      }).catch(() => { _locLoading = false; });
     }
 
     function toggleLocationDropdown(event) {
@@ -2636,6 +2788,7 @@
       if (isHidden) {
         buildLocationDropdownMenu();
         menu.classList.remove('hidden');
+        locEnsure();
       } else {
         menu.classList.add('hidden');
       }
@@ -2693,15 +2846,15 @@
                     <span>${item.totalCount}</span>
                   </button>
                   ${item.presentCities.map(city => {
-                    const isCitySelected = STATE.locationFilter.type === 'CITY' && STATE.locationFilter.value === city;
+                    const isCitySelected = STATE.locationFilter.type === 'CITY' && STATE.locationFilter.value === item.gmina + '::' + city;
                     const cnt = item.cityCounts[city] || 0;
                     return `
                       <button
                         type="button"
-                        onclick="selectLocationFilter('CITY', '${escapeJsStr(city)}', '📍 ${escapeJsStr(city)} (${escapeJsStr(item.gmina)})', event)"
+                        onclick="selectLocationFilter('CITY', '${escapeJsStr(item.gmina + '::' + city)}', '📍 ${escapeJsStr(city)} (${escapeJsStr(item.gmina)})', event)"
                         class="w-full px-2.5 py-1.5 rounded-lg text-left text-xs flex items-center justify-between transition ${isCitySelected ? 'bg-gold-500 text-slate-950 font-extrabold' : 'text-slate-300 hover:bg-slate-800 font-medium'}"
                       >
-                        <span>• ${city}</span>
+                        <span>• ${statsEsc(city)}</span>
                         <span class="text-[10px] ${isCitySelected ? 'text-slate-950 font-bold' : 'text-slate-400'}">${cnt}</span>
                       </button>
                     `;
@@ -2791,10 +2944,11 @@
       let list = STATE.teams.filter(t => {
         if (STATE.rankingMode === 'active' && !t.active) return false;
         if (STATE.locationFilter.type === 'CITY') {
-          if (t.city !== STATE.locationFilter.value) return false;
+          const L = locOfTeam(t);
+          if (!L || L.group + '::' + L.label !== STATE.locationFilter.value) return false;
         } else if (STATE.locationFilter.type === 'GMINA') {
-          const foundDef = MAIN_LOCATION_GROUPS.find(g => g.gmina === STATE.locationFilter.value);
-          if (foundDef && !foundDef.cities.includes(t.city)) return false;
+          const L = locOfTeam(t);
+          if (!L || L.group !== STATE.locationFilter.value) return false;
         }
         if (search && !t.name.toLowerCase().includes(search)) return false;
         return true;
@@ -3065,11 +3219,12 @@
         .reverse();
 
       let wins = 0, draws = 0, losses = 0;
-      let sparWins = 0, sparDraws = 0, sparLosses = 0;   // sparingi liczone osobno
+      let sparWins = 0, sparDraws = 0, sparLosses = 0;   // sparingi: wliczone w W/R/P, ale pokazane też osobno
       let currentUnbeaten = 0, maxUnbeaten = 0;
       const oppCounts = {};
       const eloHistory = [];
 
+      let officialPlayed = 0;   // mecze bez sparingów – tylko one liczą się do serii
       teamMatches.forEach(m => {
         const isA = m.teamA === team.name;
         const res = isA ? m.resA : (1 - m.resA);
@@ -3079,14 +3234,12 @@
           else if (res === 0.5) sparDraws++;
           else sparLosses++;
         } else {
-          if (res === 1) { wins++; currentUnbeaten++; }
-          else if (res === 0.5) { draws++; currentUnbeaten++; }
-          else { losses++; currentUnbeaten = 0; }
-
+          officialPlayed++;
+          if (res === 1 || res === 0.5) currentUnbeaten++; else currentUnbeaten = 0;
           if (currentUnbeaten > maxUnbeaten) maxUnbeaten = currentUnbeaten;
-
-          oppCounts[opp] = (oppCounts[opp] || 0) + 1;
         }
+        if (res === 1) wins++; else if (res === 0.5) draws++; else losses++;
+        oppCounts[opp] = (oppCounts[opp] || 0) + 1;
 
         const pre = isA ? m.eloPreA : m.eloPreB;
         const post = isA ? m.eloPostA : m.eloPostB;
@@ -3107,9 +3260,8 @@
       const medalRow = STATE.medals.find(m => m.team === team.name);
       const trophies = getTeamTrophies(team.name);
       const specials = SPECIAL_ACHIEVEMENTS[team.name] || [];
-      const officialPlayed = wins + draws + losses;
       const sparTotal = sparWins + sparDraws + sparLosses;
-      const totalPlayed = teamMatches.length ? officialPlayed : team.matches;
+      const totalPlayed = teamMatches.length ? wins + draws + losses : team.matches;
       const winRate = totalPlayed ? ((wins / totalPlayed) * 100).toFixed(1) : "0.0";
       const sparRate = sparTotal ? ((sparWins / sparTotal) * 100).toFixed(1) : "0.0";
       const recent5 = [...eloHistory].reverse().slice(0, 5);
@@ -3165,7 +3317,7 @@
               </div>
               ${sparTotal > 0 ? `
               <div class="flex justify-between text-xs font-bold">
-                <span class="text-slate-400">🤝 Sparingi: <strong class="text-slate-200">${sparTotal}</strong></span>
+                <span class="text-slate-400">🤝 w tym sparingi: <strong class="text-slate-200">${sparTotal}</strong></span>
                 <span class="text-emerald-400">W: ${sparWins} (${sparRate}%)</span>
                 <span class="text-slate-300">R: ${sparDraws}</span>
                 <span class="text-rose-400">P: ${sparLosses}</span>
@@ -4590,12 +4742,14 @@
         // więc mecz rozstrzygnięty w karnych liczy się jako zwycięstwo / porażka
         const ga = parseInt(m.goalsA, 10) || 0, gb = parseInt(m.goalsB, 10) || 0;
         const sparing = isSparingMatch(m);
-        if (!sparing) { goals += ga + gb; officialCount++; }
+        goals += ga + gb; officialCount++;
         const resA = (typeof m.resA === 'number' && !isNaN(m.resA)) ? m.resA : (ga > gb ? 1 : ga === gb ? 0.5 : 0);
-        (sparing ? [] : [[m.teamA, ga, resA], [m.teamB, gb, 1 - resA]]).forEach(([name, gf, res]) => {
+        [[m.teamA, ga, resA], [m.teamB, gb, 1 - resA]].forEach(([name, gf, res]) => {
           const t = get(name);
           t.n++; t.gf += gf;
-          if (res > 0.5) { t.w++; t.curW++; t.curU++; }
+          if (res > 0.5) t.w++;
+          if (sparing) return;   // sparingi nie wchodzą do serii
+          if (res > 0.5) { t.curW++; t.curU++; }
           else if (res === 0.5) { t.curW = 0; t.curU++; }
           else { t.curW = 0; t.curU = 0; }
           if (t.curW > t.bestW) { t.bestW = t.curW; t.bestWAt = i; }
@@ -4654,11 +4808,11 @@
     function buildKpiSlides() {
       const f = computeKpiFacts();
       const fmt = n => Number(n).toLocaleString('pl-PL');
-      const nMatches = f.matchesCount;   // bez sparingów
+      const nMatches = f.matchesCount;   // ze sparingami
 
       // 3. kafelek (kolejność jak w opisie: mecze -> bramki -> sezony -> turnieje -> medale na końcu)
       const left = [
-        { icon: '⚽', label: 'Rozegrane Mecze', value: fmt(nMatches), sub: 'W oficjalnej bazie' },
+        { icon: '⚽', label: 'Rozegrane Mecze', value: fmt(nMatches), sub: 'W bazie' },
         nMatches ? { icon: '🥅', label: 'Strzelone Bramki', value: fmt(f.goals), sub: `Średnio ${(f.goals / nMatches).toFixed(1).replace('.', ',')} na mecz` } : null,
         f.leagues ? { icon: '📅', label: 'Sezony Ligowe', value: fmt(f.leagues), sub: 'Edycje' } : null,
         f.tournaments ? { icon: '🏆', label: 'Turnieje', value: fmt(f.tournaments), sub: 'Rozegranych edycji turniejów' } : null,
