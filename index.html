@@ -1473,6 +1473,26 @@
 
     // Dane z Arkusza trafiają później do innerHTML. Usuwamy z nich znaki < i >, żeby (np. przez publiczne proxy
     // lub zmodyfikowane dane w pamięci przeglądarki) nikt nie mógł wstrzyknąć na stronę własnego kodu.
+    // ---------- linki do Facebooka / Instagrama drużyny (karta drużyny) ----------
+    // Zwraca bezpieczny adres http(s) albo '' – przyjmuje pełny link, link bez https:// oraz (dla Instagrama) sam @nick.
+    function socialUrl(v, kind) {
+      v = String(v || '').trim();
+      if (!v) return '';
+      if (/^https?:\/\//i.test(v)) return v;
+      if (/^(www\.|m\.)?(facebook\.com|fb\.com|fb\.me|instagram\.com)\//i.test(v)) return 'https://' + v;
+      if (kind === 'ig') { const h = v.replace(/^@/, ''); if (/^[\w.]{1,30}$/.test(h)) return 'https://www.instagram.com/' + h; }
+      return '';
+    }
+    function teamSocialHtml(team) {
+      const fb = socialUrl(team.fb, 'fb'), ig = socialUrl(team.ig, 'ig');
+      if (!fb && !ig) return '';   // drużyna bez linków – nic nie pokazujemy
+      const ico = d => `<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="${d}"/></svg>`;
+      const FB = 'M22 12a10 10 0 1 0-11.6 9.9v-7H7.9V12h2.5V9.8c0-2.5 1.5-3.9 3.8-3.9 1.1 0 2.2.2 2.2.2v2.5h-1.3c-1.2 0-1.6.8-1.6 1.6V12h2.8l-.4 2.9h-2.3v7A10 10 0 0 0 22 12z';
+      const IG = 'M7.8 2h8.4A5.8 5.8 0 0 1 22 7.8v8.4a5.8 5.8 0 0 1-5.8 5.8H7.8A5.8 5.8 0 0 1 2 16.2V7.8A5.8 5.8 0 0 1 7.8 2zm0 1.8A4 4 0 0 0 3.8 7.8v8.4a4 4 0 0 0 4 4h8.4a4 4 0 0 0 4-4V7.8a4 4 0 0 0-4-4H7.8zM12 7a5 5 0 1 1 0 10 5 5 0 0 1 0-10zm0 1.8a3.2 3.2 0 1 0 0 6.4 3.2 3.2 0 0 0 0-6.4zM17.3 5.5a1.2 1.2 0 1 1 0 2.4 1.2 1.2 0 0 1 0-2.4z';
+      const a = (href, label, d) => `<a href="${escapeHtmlAttr(href)}" target="_blank" rel="noopener noreferrer" class="pill-btn" style="gap:.4rem" aria-label="${label} drużyny ${escapeHtmlAttr(team.name)}">${ico(d)}${label}</a>`;
+      return `<div class="flex flex-wrap items-center gap-2 pt-2">${fb ? a(fb, 'Facebook', FB) : ''}${ig ? a(ig, 'Instagram', IG) : ''}</div>`;
+    }
+
     function scrubRecords(list) {
       if (!Array.isArray(list)) return list;
       list.forEach(o => {
@@ -2104,6 +2124,7 @@
       const audytName = workbook.SheetNames.find(n => n.toLowerCase().includes('audyt'));
       const cityMap = {};
       const logoMap = {};
+      const fbMap = {}, igMap = {};   // linki do Facebooka (kolumna N) i Instagrama (kolumna O) drużyny
       const audytTeams = [];
 
       if (audytName) {
@@ -2113,9 +2134,13 @@
           const lookupTeam = String(r[8] || "").trim();
           const lookupCity = String(r[9] || "").trim();
           const lookupLogo = String(r[10] || "").trim();
+          const lookupFb = String(r[13] || "").trim();
+          const lookupIg = String(r[14] || "").trim();
           if (lookupTeam) {
             if (lookupCity) cityMap[lookupTeam] = lookupCity;
             if (lookupLogo) logoMap[lookupTeam] = lookupLogo;
+            if (lookupFb) fbMap[lookupTeam] = lookupFb;
+            if (lookupIg) igMap[lookupTeam] = lookupIg;
           }
         }
         for (let i = 1; i < rows.length; i++) {
@@ -2132,6 +2157,8 @@
             low: parseFloat(r[6]) || 1000,
             city: cityMap[tName] || "",
             logo: logoMap[tName] || "",
+            fb: fbMap[tName] || "",
+            ig: igMap[tName] || "",
             form: "",
             active: false
           });
@@ -3286,6 +3313,7 @@
                 <h2 class="text-xl md:text-2xl font-extrabold text-white mt-1">${team.name}</h2>
                 <div id="team-loc-slot" class="text-xs text-slate-400">📍 ${team.city ? statsEsc(team.city) : 'Brak przypisanej miejscowości'}</div>
                 <div class="flex flex-wrap items-center gap-2 pt-2">${favBtnHtml(team.name, true)}</div>
+                ${teamSocialHtml(team)}
               </div>
             </div>
 
