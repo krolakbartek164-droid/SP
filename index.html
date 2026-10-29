@@ -2332,8 +2332,8 @@
     }
 
     // Sparing = mecz towarzyski: w nazwie rozgrywek lub poziomu występuje "sparing" (np. "Sparing", "Sparingi").
-    // Sparingi wpływają na ELO (liczy je arkusz) i wliczają się do meczów, zwycięstw, bramek i najczęstszego rywala,
-    // ale NIE wliczają się do aktualnej formy (kółka W/R/P) ani do serii (bez porażki / zwycięstw).
+    // Sparingi wpływają tylko na ELO (liczy je arkusz, my je tylko czytamy) i są pokazane osobno na karcie drużyny
+    // (linia "Sparingi"). NIE wliczają się do meczów, W/R/P, bramek, formy ani serii (wliczają się tylko do najczęstszego rywala).
     function isSparingMatch(m) {
       return String(m.comp || '').toLowerCase().includes('sparing') || String(m.tier || '').toLowerCase().includes('sparing');
     }
@@ -3246,7 +3246,7 @@
         .reverse();
 
       let wins = 0, draws = 0, losses = 0;
-      let sparWins = 0, sparDraws = 0, sparLosses = 0;   // sparingi: wliczone w W/R/P, ale pokazane też osobno
+      let sparWins = 0, sparDraws = 0, sparLosses = 0;   // sparingi: liczone TYLKO osobno (linia "Sparingi"), poza W/R/P, rywalem i seriami
       let currentUnbeaten = 0, maxUnbeaten = 0;
       const oppCounts = {};
       const eloHistory = [];
@@ -3264,9 +3264,9 @@
           officialPlayed++;
           if (res === 1 || res === 0.5) currentUnbeaten++; else currentUnbeaten = 0;
           if (currentUnbeaten > maxUnbeaten) maxUnbeaten = currentUnbeaten;
+          if (res === 1) wins++; else if (res === 0.5) draws++; else losses++;
         }
-        if (res === 1) wins++; else if (res === 0.5) draws++; else losses++;
-        oppCounts[opp] = (oppCounts[opp] || 0) + 1;
+        oppCounts[opp] = (oppCounts[opp] || 0) + 1;   // najczęstszy rywal liczy też sparingi
 
         const pre = isA ? m.eloPreA : m.eloPreB;
         const post = isA ? m.eloPostA : m.eloPostB;
@@ -3345,7 +3345,7 @@
               </div>
               ${sparTotal > 0 ? `
               <div class="flex justify-between text-xs font-bold">
-                <span class="text-slate-400">🤝 w tym sparingi: <strong class="text-slate-200">${sparTotal}</strong></span>
+                <span class="text-slate-400">🤝 Sparingi: <strong class="text-slate-200">${sparTotal}</strong></span>
                 <span class="text-emerald-400">W: ${sparWins} (${sparRate}%)</span>
                 <span class="text-slate-300">R: ${sparDraws}</span>
                 <span class="text-rose-400">P: ${sparLosses}</span>
@@ -4770,13 +4770,13 @@
         // więc mecz rozstrzygnięty w karnych liczy się jako zwycięstwo / porażka
         const ga = parseInt(m.goalsA, 10) || 0, gb = parseInt(m.goalsB, 10) || 0;
         const sparing = isSparingMatch(m);
-        goals += ga + gb; officialCount++;
+        if (!sparing) { goals += ga + gb; officialCount++; }
         const resA = (typeof m.resA === 'number' && !isNaN(m.resA)) ? m.resA : (ga > gb ? 1 : ga === gb ? 0.5 : 0);
         [[m.teamA, ga, resA], [m.teamB, gb, 1 - resA]].forEach(([name, gf, res]) => {
+          if (sparing) return;   // sparingi nie wchodzą do meczów, wygranych, bramek ani serii
           const t = get(name);
           t.n++; t.gf += gf;
           if (res > 0.5) t.w++;
-          if (sparing) return;   // sparingi nie wchodzą do serii
           if (res > 0.5) { t.curW++; t.curU++; }
           else if (res === 0.5) { t.curW = 0; t.curU++; }
           else { t.curW = 0; t.curU = 0; }
@@ -4836,7 +4836,7 @@
     function buildKpiSlides() {
       const f = computeKpiFacts();
       const fmt = n => Number(n).toLocaleString('pl-PL');
-      const nMatches = f.matchesCount;   // ze sparingami
+      const nMatches = f.matchesCount;   // bez sparingów
 
       // 3. kafelek (kolejność jak w opisie: mecze -> bramki -> sezony -> turnieje -> medale na końcu)
       const left = [
