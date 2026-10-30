@@ -1430,6 +1430,25 @@
         .replace(/[^a-z0-9]/g, "");
     }
 
+    // Spis logo z repozytorium: logos/logos.json (id pliku z Dysku -> nazwa pliku w folderze logos/).
+    // Tworzy go automatycznie skrypt scripts/sync_logos.py (GitHub Actions). Ostatni spis trzymamy też
+    // w pamięci przeglądarki, żeby logo działały nawet bez internetu.
+    let LOGO_FILES = {};
+    async function loadLogoManifest() {
+      try {
+        const res = await fetch('logos/logos.json', { cache: 'no-cache' });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const j = await res.json();
+        if (j && typeof j === 'object') {
+          LOGO_FILES = j;
+          try { localStorage.setItem('szostki-logos-manifest', JSON.stringify(j)); } catch (e) {}
+        }
+      } catch (e) {
+        try { LOGO_FILES = JSON.parse(localStorage.getItem('szostki-logos-manifest') || '{}') || {}; } catch (e2) { LOGO_FILES = {}; }
+      }
+      RESOLVED_LOGO_CACHE = {};
+    }
+
     function resolveTeamLogo(teamName) {
       if (!teamName) return "";
       if (RESOLVED_LOGO_CACHE[teamName] !== undefined) return RESOLVED_LOGO_CACHE[teamName];
@@ -1451,9 +1470,11 @@
         return "";
       }
       const driveMatch = String(t.logo).match(/\/d\/([a-zA-Z0-9_-]+)/);
-      const resolved = (driveMatch && driveMatch[1])
+      // logo z repozytorium (folder logos/, uzupełniany automatycznie z arkusza); gdy go brak – prosto z Dysku Google
+      const local = (driveMatch && LOGO_FILES[driveMatch[1]]) ? 'logos/' + LOGO_FILES[driveMatch[1]] : '';
+      const resolved = local || ((driveMatch && driveMatch[1])
         ? `https://lh3.googleusercontent.com/d/${driveMatch[1]}`
-        : t.logo;
+        : t.logo);
       RESOLVED_LOGO_CACHE[teamName] = resolved;
       return resolved;
     }
@@ -5128,6 +5149,8 @@
 
     // AUTOMATYCZNY START
     window.addEventListener('DOMContentLoaded', async () => {
+      // spis logo z repozytorium (mały plik JSON) musi być znany, zanim pierwszy raz rysujemy drużyny
+      try { await Promise.race([loadLogoManifest(), new Promise(r => setTimeout(r, 1500))]); } catch (e) {}
       initAllViews();
       applyRoute(true);
 
