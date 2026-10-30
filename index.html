@@ -3081,6 +3081,7 @@
       // wydarzenia (liga / turniej / inne), które mieszczą się w ostatnich 75 meczach
       const events = new Map();
       STATE.matches.slice(0, RECENT_MATCHES_LIMIT).forEach(m => {
+        if (isSparingMatch(m)) return;   // sparingi zostają na liście „Ostatnie mecze”, ale bez osobnego przycisku do wyboru
         const id = keyOf(m);
         if (events.has(id)) return;
         const league = isLeagueEvent(m);
