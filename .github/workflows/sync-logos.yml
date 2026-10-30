@@ -1,0 +1,35 @@
+name: Synchronizacja logo
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"     # co 6 godzin
+  workflow_dispatch:            # oraz ręcznie: zakładka Actions -> Synchronizacja logo -> Run workflow
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-logos
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pillow openpyxl
+      - run: python scripts/sync_logos.py
+      - name: Zapisz zmiany w repozytorium
+        run: |
+          git config user.name "logo-bot"
+          git config user.email "logo-bot@users.noreply.github.com"
+          git add -A logos
+          if git diff --cached --quiet; then
+            echo "Bez zmian"
+          else
+            git commit -m "Aktualizacja logo drużyn"
+            git push
+          fi
