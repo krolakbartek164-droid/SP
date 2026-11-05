@@ -2189,9 +2189,19 @@
       if (AG.kind === 'month') {
         const rank = agMonthRanking(AG.month);
         if (!rank.length) return { error: 'W tym miesiącu żadna drużyna nie ma dodatniego przyrostu ELO.' };
-        const top = rank[0], chasers = rank.slice(1, 3);
+        const top = rank[0];
         const t = STATE.teams.find(x => x.name === top.name) || { name: top.name, elo: 1000, city: '' };
-        return { names: [top.name, ...chasers.map(x => x.name)], file: 'druzyna-miesiaca-' + AG.month, draw: (c, W, H, story, logos, portal) => agDrawMonth(c, W, H, story, logos, portal, AG.month, top, t, chasers) };
+        // mecze tej drużyny w wybranym miesiącu (chronologicznie), z jej punktu widzenia
+        const ms = STATE.matches.filter(m => String(m.date).slice(0, 7) === AG.month && (m.teamA === top.name || m.teamB === top.name))
+          .slice().sort((a, b) => String(a.date).localeCompare(String(b.date)) || (a.order || 0) - (b.order || 0))
+          .map(m => {
+            const isA = m.teamA === top.name;
+            const ga = parseInt(m.goalsA, 10) || 0, gb = parseInt(m.goalsB, 10) || 0;
+            const resA = (typeof m.resA === 'number' && !isNaN(m.resA)) ? m.resA : (ga > gb ? 1 : ga === gb ? 0.5 : 0);
+            return { date: m.date, opp: isA ? m.teamB : m.teamA, own: isA ? m.goalsA : m.goalsB, oth: isA ? m.goalsB : m.goalsA,
+              res: isA ? resA : 1 - resA, d: isA ? m.eloPostA - m.eloPreA : m.eloPostB - m.eloPreB, comp: m.comp || '' };
+          });
+        return { names: [top.name, ...ms.map(x => x.opp)], file: 'druzyna-miesiaca-' + AG.month, draw: (c, W, H, story, logos, portal) => agDrawMonth(c, W, H, story, logos, portal, AG.month, top, t, ms) };
       }
       return null;
     }
@@ -2391,38 +2401,70 @@
       });
     }
 
-    // ---------- 4. Drużyna miesiąca ----------
-    function agDrawMonth(c, W, H, story, logos, portal, month, top, team, chasers) {
+    // ---------- 4. Drużyna miesiąca (ze wszystkimi jej meczami w tym miesiącu) ----------
+    function agDrawMonth(c, W, H, story, logos, portal, month, top, team, ms) {
       const k = agKit(c, W, H, story, logos, portal), { P, CF, BF, PAD, txt } = k;
+      const sq = W === H;
       k.bg();
       txt('DRUŻYNA MIESIĄCA', W / 2, k.top + 84, 34, 800, P.GOLD, 'center', CF);
-      let y = k.title(agMonthLabel(month), k.top + 100, 120);
-      const fy = k.footer(), sc = story ? 1.12 : 1, sq = W === H;
-      const r = sq ? 96 : 150 * sc, cy = y + (sq ? 26 : 36) + r;
+      const y = k.title(agMonthLabel(month), k.top + 100, 120);
+      const fy = k.footer(), bot = fy - 22;
+      const GREEN = k.dark ? '#34d399' : '#15803d', RED = k.dark ? '#fb7185' : '#b91c1c';
+      const resCol = r => r > 0.5 ? GREEN : r === 0.5 ? P.MUTED : RED;
+
+      // lista meczów: do 5 – jedna kolumna z nazwą rozgrywek, więcej – dwie kolumny (kompaktowo)
+      const two = ms.length > 5, cardsH = sq ? 106 : 130, gapCards = 22, labelH = 46;
+      let rowH = two ? 50 : 66, shown = ms.slice();
+      const rowsOf = n => two ? Math.ceil(n / 2) : n;
+      const rowsH = () => rowsOf(shown.length) * rowH + Math.max(0, rowsOf(shown.length) - 1) * 6;
+      const listH = () => rowsH() + (shown.length < ms.length ? 28 : 0);
+      const nameSz = r => Math.round(Math.min(sq ? 58 : 80, 34 + r * 0.6));
+      const fixed = r => 26 + 2 * r + 12 + 0.85 * nameSz(r) + 52 + cardsH + gapCards + labelH + listH();
+      const rMax = sq ? 90 : (story ? 168 : 140);
+      const solveR = () => { for (let q = rMax; q >= 40; q -= 2) if (fixed(q) <= bot - y) return q; return 40; };
+      let r = solveR();
+      while (r < 56 && rowH > 36) { rowH -= 2; r = solveR(); }
+      while (r <= 40 && fixed(40) > bot - y && shown.length > 2) { shown = shown.slice(0, -2); r = solveR(); }   // ostateczność: ucinamy listę
+      const hidden = ms.length - shown.length;
+
+      // logo + nazwa + miasto
+      const cy = y + 26 + r;
       k.logo(top.name, W / 2, cy, r, '#e2b64e', 8);
-      let ny = cy + r + (sq ? 70 : 96 * sc);
-      txt(top.name.toUpperCase(), W / 2, ny, sq ? 62 : 84, 800, P.INK, 'center', CF, W - 2 * PAD);
-      if (team.city) { txt(team.city, W / 2, ny + (sq ? 32 : 38), sq ? 24 : 28, 600, P.MUTED, 'center', BF, W - 2 * PAD); }
-      const cw = (W - 2 * PAD - 40) / 3, cy0 = ny + (sq ? 54 : 66 * sc), chh = sq ? 116 : 142;
+      const ns = nameSz(r), ny = cy + r + 12 + 0.85 * ns;
+      txt(top.name.toUpperCase(), W / 2, ny, ns, 800, P.INK, 'center', CF, W - 2 * PAD);
+      if (team.city) txt(team.city, W / 2, ny + 32, 24, 600, P.MUTED, 'center', BF, W - 2 * PAD);
+
+      // kafelki: przyrost ELO / mecze / obecne ELO
+      const cw = (W - 2 * PAD - 40) / 3, cy0 = ny + (team.city ? 52 : 34);
       [['PRZYROST ELO', '+' + top.gain.toFixed(1)], ['MECZE', String(top.n), `${top.w}W  ${top.r}R  ${top.l}P`], ['OBECNE ELO', team.elo.toFixed(0)]].forEach(([label, val, extra], i) => {
         const x = PAD + i * (cw + 20);
-        k.rr(x, cy0, cw, chh, 22); c.fillStyle = P.CARD; c.fill(); c.lineWidth = 2; c.strokeStyle = P.LINE; c.stroke();
-        txt(label, x + cw / 2, cy0 + 38, 22, 700, P.MUTED, 'center', BF);
-        txt(val, x + cw / 2, cy0 + (sq ? (extra ? 80 : 92) : (extra ? 100 : 112)), sq ? 62 : 76, 800, P.GOLD, 'center', CF, cw - 24);
-        if (extra) txt(extra, x + cw / 2, cy0 + (sq ? 104 : 130), 22, 700, P.MUTED, 'center', BF);
+        k.rr(x, cy0, cw, cardsH, 22); c.fillStyle = P.CARD; c.fill(); c.lineWidth = 2; c.strokeStyle = P.LINE; c.stroke();
+        txt(label, x + cw / 2, cy0 + 32, 21, 700, P.MUTED, 'center', BF);
+        txt(val, x + cw / 2, cy0 + (extra ? cardsH - 38 : cardsH - 24), extra ? 50 : (sq ? 58 : 70), 800, P.GOLD, 'center', CF, cw - 24);
+        if (extra) txt(extra, x + cw / 2, cy0 + cardsH - 10, 20, 700, P.MUTED, 'center', BF);
       });
-      if (chasers.length) {
-        let ry = cy0 + chh + (sq ? 42 : 52);
-        txt('NAJBLIŻSI KONKURENCI', W / 2, ry, 22, 700, P.MUTED, 'center', BF); ry += 16;
-        chasers.forEach((t, i) => {
-          const yy = ry + i * 76;
-          k.rr(PAD, yy, W - 2 * PAD, 66, 16); c.fillStyle = P.CARD; c.fill(); c.lineWidth = 2; c.strokeStyle = P.LINE; c.stroke();
-          txt('#' + (i + 2), PAD + 24, yy + 44, 30, 800, P.MUTED, 'left', CF);
-          k.logo(t.name, PAD + 116, yy + 33, 24, null, 0);
-          txt(t.name, PAD + 156, yy + 44, 30, 700, P.INK, 'left', BF, W - 2 * PAD - 156 - 190);
-          txt('+' + t.gain.toFixed(1) + ' ELO', W - PAD - 24, yy + 44, 30, 800, P.GOLD, 'right', CF);
-        });
-      }
+
+      // mecze w miesiącu
+      const ly = cy0 + cardsH + gapCards;
+      txt('MECZE W TYM MIESIĄCU', W / 2, ly + 24, 22, 700, P.MUTED, 'center', BF);
+      const y0 = ly + labelH, colW = two ? (W - 2 * PAD - 20) / 2 : W - 2 * PAD;
+      shown.forEach((m, i) => {
+        const col = two ? (i < rowsOf(shown.length) ? 0 : 1) : 0, ri = two && col ? i - rowsOf(shown.length) : i;
+        const x = PAD + col * (colW + 20), yy = y0 + ri * (rowH + 6);
+        k.rr(x, yy, colW, rowH, 14); c.fillStyle = P.CARD; c.fill(); c.lineWidth = 2; c.strokeStyle = P.LINE; c.stroke();
+        const dm = /^\d{4}-(\d{2})-(\d{2})/.exec(String(m.date)), dtxt = dm ? dm[2] + '.' + dm[1] : '';
+        const mid = yy + rowH / 2, lr = Math.min(22, rowH * 0.34), fs = two ? 22 : 28;
+        const dStr = (m.d >= 0 ? '+' : '') + m.d.toFixed(1), dCol = m.d > 0.05 ? GREEN : m.d < -0.05 ? RED : P.MUTED;
+        txt(dtxt, x + 14, mid + 7, two ? 20 : 24, 600, P.MUTED, 'left', BF);
+        const lx = x + (two ? 70 : 92) + lr;
+        k.logo(m.opp, lx, mid, lr, null, 0);
+        const rightW = two ? 118 : 200, nx = lx + lr + 12;
+        txt(m.opp, nx, two || rowH < 58 ? mid + 7 : mid + 2, fs, 700, P.INK, 'left', BF, colW - (nx - x) - rightW);
+        if (!two && rowH >= 58 && m.comp) txt(m.comp, nx, mid + 24, 18, 600, P.MUTED, 'left', BF, colW - (nx - x) - rightW);
+        txt(dStr, x + colW - 14, mid + 8, two ? 20 : 28, 800, dCol, 'right', CF);
+        txt(m.own + ':' + m.oth, x + colW - 14 - (two ? 66 : 100), mid + 9, two ? 26 : 38, 800, resCol(m.res), 'right', CF);
+      });
+      if (hidden > 0) txt(`+ ${hidden} ${plural(hidden, 'mecz', 'mecze', 'meczów')} więcej`, W / 2, y0 + rowsH() + 22, 20, 600, P.MUTED, 'center', BF);
     }
 
     function renderTeamAvatar(teamName, sizeClass = "w-8 h-8", textClass = "text-xs") {
