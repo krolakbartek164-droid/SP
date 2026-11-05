@@ -505,6 +505,7 @@
       <div id="menu-tools" class="menu-sep" aria-hidden="true"></div>
       <button type="button" role="menuitem" onclick="switchTab('stats')" id="tab-stats" class="hidden menu-item"><span class="menu-label">Statystyki</span></button>
       <button type="button" role="menuitem" onclick="switchTab('lokalizacje')" id="tab-lokalizacje" class="hidden menu-item"><span class="menu-label">Lokalizacje</span><span id="rep-badge" class="hidden menu-badge">0</span></button>
+      <button type="button" role="menuitem" onclick="switchTab('grafiki')" id="tab-grafiki" class="hidden menu-item"><span class="menu-label">Grafiki</span></button>
     </nav>
     <div class="menu-foot sm:hidden">
       <button type="button" onclick="shareView()">Udostępnij widok</button>
@@ -853,6 +854,28 @@
         <input type="search" id="loc-filter-search" oninput="geoDrawLoc()" placeholder="Szukaj drużyny lub miejscowości…" autocomplete="off" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">
       </div>
       <div id="loc-body" class="space-y-2"></div>
+    </div>
+
+    <div id="view-grafiki" class="hidden space-y-4">
+      <div class="panel rounded-2xl p-4 space-y-3">
+        <div>
+          <h2 class="text-xl text-white">Generator grafik</h2>
+          <p class="text-[11px] text-slate-400 mt-0.5">Wybierz rodzaj grafiki, ustaw opcje i pobierz gotowy PNG (post 4:5 albo story 9:16) – do wrzucenia na Facebooka i Instagrama.</p>
+        </div>
+        <div id="ag-kinds" class="flex flex-wrap gap-2"></div>
+        <div id="ag-controls" class="grid gap-3 sm:grid-cols-2"></div>
+        <div id="ag-fmt" class="flex flex-wrap items-center gap-x-4 gap-y-2"></div>
+      </div>
+      <div class="panel rounded-2xl p-4 space-y-3">
+        <div style="display:flex;justify-content:center;align-items:center;min-height:14rem;border-radius:.75rem;overflow:hidden">
+          <img id="ag-img" alt="Podgląd grafiki" hidden style="max-width:100%;max-height:75vh;height:auto;border-radius:.5rem">
+          <p id="ag-status" class="text-sm text-slate-300 p-8">Generuję grafikę…</p>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <button type="button" id="ag-dl" onclick="agDownload()" disabled class="px-4 py-2.5 rounded-xl text-sm font-extrabold bg-gold-500 text-slate-950 disabled:opacity-50">Pobierz PNG</button>
+          <button type="button" id="ag-share" onclick="agShare()" hidden class="px-4 py-2.5 rounded-xl text-sm font-extrabold border border-gold-500 text-gold-400">Zapisz / udostępnij</button>
+        </div>
+      </div>
     </div>
 
     <!-- 7. ZAKŁADKA: MISTRZOSTWA POWIATU (EDYCJA 1 - 2025, EDYCJA 2 - 2026, EDYCJA 3 - 2027) -->
@@ -1406,6 +1429,7 @@
       document.getElementById('pro-toolbar').classList.add('flex');
       document.getElementById('tab-stats').classList.remove('hidden');
       document.getElementById('tab-lokalizacje').classList.remove('hidden');
+      document.getElementById('tab-grafiki').classList.remove('hidden');
       Stats.markOwner();
       renderPowiatView();
       try { repLoad(true); } catch (e) {}
@@ -1417,7 +1441,8 @@
       document.getElementById('pro-toolbar').classList.remove('flex');
       document.getElementById('tab-stats').classList.add('hidden');
       document.getElementById('tab-lokalizacje').classList.add('hidden');
-      if (STATE.activeTab === 'stats' || STATE.activeTab === 'lokalizacje') switchTab('ranking');
+      document.getElementById('tab-grafiki').classList.add('hidden');
+      if (STATE.activeTab === 'stats' || STATE.activeTab === 'lokalizacje' || STATE.activeTab === 'grafiki') switchTab('ranking');
       statsKeyMem = ''; try { sessionStorage.removeItem(STATS_KEY_STORE); } catch (e) {}
       renderPowiatView();
     }
@@ -1863,7 +1888,7 @@
     function gfxDraw(c, W, H, story, team, d, logos, portal) {
       const GOLD = '#e2b64e', INK = '#f5f1e6', MUTED = '#9a9384', LINE = 'rgba(226,182,78,.30)';
       const CF = '"Barlow Condensed", "Barlow", system-ui, sans-serif', BF = '"Barlow", system-ui, sans-serif';
-      const top = story ? 200 : 0, u = story ? 1.1 : 1, Y = b => Math.round(top + b * u), PAD = 64;
+      const top = story ? 200 : 0, u = story ? 1.1 : 1, Y = b => Math.round(top + b * u), PAD = 64, sq = W === H;   // sq = kwadrat 1:1 (bez TOP 3, ciaśniej)
       // tło
       let g = c.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#0d0c0a'); g.addColorStop(1, '#1b1509');
       c.fillStyle = g; c.fillRect(0, 0, W, H);
@@ -1898,28 +1923,30 @@
       txt('SZÓSTKI POWIATU PIASECZYŃSKIEGO', W / 2, Y(74), 34, 800, GOLD, 'center', CF, W - 2 * PAD);
       txt('RANKING ELO  •  STAN NA ' + (STATE.lastUpdateDate || ''), W / 2, Y(108), 24, 600, MUTED, 'center', BF);
       // drużyna
-      logo(team.name, W / 2, Y(206), 84, GOLD, 6);
-      txt(team.name.toUpperCase(), W / 2, Y(368), 80, 800, INK, 'center', CF, W - 2 * PAD);
-      if (team.city) txt(team.city, W / 2, Y(406), 28, 600, MUTED, 'center', BF, W - 2 * PAD);
+      logo(team.name, W / 2, Y(sq ? 194 : 206), sq ? 64 : 84, GOLD, 6);
+      txt(team.name.toUpperCase(), W / 2, Y(sq ? 322 : 368), sq ? 70 : 80, 800, INK, 'center', CF, W - 2 * PAD);
+      if (team.city) txt(team.city, W / 2, Y(sq ? 354 : 406), 28, 600, MUTED, 'center', BF, W - 2 * PAD);
       // miejsce + ELO
-      const cw = (W - 2 * PAD - 24) / 2, cy0 = Y(436), chh = 140;
+      const cw = (W - 2 * PAD - 24) / 2, cy0 = Y(sq ? 392 : 436), chh = sq ? 118 : 140;
       [[PAD, 'MIEJSCE W RANKINGU', '#' + d.pos], [PAD + cw + 24, 'PUNKTY ELO', team.elo.toFixed(1)]].forEach(([x, label, val]) => {
         rr(x, cy0, cw, chh, 22); c.fillStyle = 'rgba(255,255,255,.06)'; c.fill(); c.lineWidth = 2; c.strokeStyle = LINE; c.stroke();
-        txt(label, x + cw / 2, cy0 + 40, 24, 700, MUTED, 'center', BF);
-        txt(val, x + cw / 2, cy0 + 122, 92, 800, GOLD, 'center', CF, cw - 40);
+        txt(label, x + cw / 2, cy0 + (sq ? 36 : 40), 24, 700, MUTED, 'center', BF);
+        txt(val, x + cw / 2, cy0 + (sq ? 106 : 122), sq ? 78 : 92, 800, GOLD, 'center', CF, cw - 40);
       });
       // forma
-      txt('OSTATNIE 5 MECZÓW', W / 2, Y(620), 22, 700, MUTED, 'center', BF);
+      txt('OSTATNIE 5 MECZÓW', W / 2, Y(sq ? 540 : 620), 22, 700, MUTED, 'center', BF);
       if (d.form.length) {
-        const n = d.form.length, r = 28, gap = 22, tot = n * 2 * r + (n - 1) * gap;
+        const n = d.form.length, r = sq ? 24 : 28, gap = 22, tot = n * 2 * r + (n - 1) * gap;
         d.form.forEach((x, k) => {
           const cx = (W - tot) / 2 + r + k * (2 * r + gap);
           const col = x === 'W' ? '#34d399' : x === 'R' ? '#94a3b8' : '#fb7185';
-          c.beginPath(); c.arc(cx, Y(668), r, 0, Math.PI * 2); c.fillStyle = col; c.fill();
-          txt(x, cx, Y(668) + 11, 32, 800, '#14110c', 'center', CF);
+          const fyy = Y(sq ? 584 : 668);
+          c.beginPath(); c.arc(cx, fyy, r, 0, Math.PI * 2); c.fillStyle = col; c.fill();
+          txt(x, cx, fyy + 11, 32, 800, '#14110c', 'center', CF);
         });
-      } else txt('brak rozegranych meczów', W / 2, Y(676), 26, 600, MUTED, 'center', BF);
-      // podium
+      } else txt('brak rozegranych meczów', W / 2, Y(sq ? 592 : 676), 26, 600, MUTED, 'center', BF);
+      // podium (w kwadracie pomijamy – brakuje miejsca)
+      if (!sq) {
       txt('TOP 3 POWIATU', W / 2, Y(744), 22, 700, MUTED, 'center', BF);
       const order = [[1, -310, '#cfd2d6', 40], [0, 0, GOLD, 48], [2, 310, '#c27a3c', 40]];
       order.forEach(([idx, dx, col, r]) => {
@@ -1931,10 +1958,11 @@
         txt(t.name, cx, cy + r + 50, 28, 700, INK, 'center', BF, 290);
         txt(t.elo.toFixed(0) + ' ELO', cx, cy + r + 82, 24, 700, GOLD, 'center', BF);
       });
+      }
       // wycinek tabeli
-      txt('TWOJA DRUŻYNA W TABELI', W / 2, Y(988), 22, 700, MUTED, 'center', BF);
+      txt('TWOJA DRUŻYNA W TABELI', W / 2, Y(sq ? 650 : 988), 22, 700, MUTED, 'center', BF);
       d.rows.forEach((row, k) => {
-        const ry = Y(1004) + k * Math.round(70 * u);
+        const ry = Y(sq ? 666 : 1004) + k * Math.round(70 * u);
         rr(PAD, ry, W - 2 * PAD, 62, 16);
         if (row.me) { c.fillStyle = 'rgba(226,182,78,.20)'; c.fill(); c.lineWidth = 2.5; c.strokeStyle = GOLD; c.stroke(); }
         else { c.fillStyle = 'rgba(255,255,255,.05)'; c.fill(); }
@@ -1944,7 +1972,7 @@
         txt(row.t.elo.toFixed(1), W - PAD - 24, ry + 41, 30, 800, row.me ? GOLD : MUTED, 'right', CF);
       });
       // stopka: logo Szóstek Powiatu
-      const fy = Y(1236);
+      const fy = sq ? H - 132 : Y(1236);
       c.fillStyle = LINE; c.fillRect(PAD, fy, W - 2 * PAD, 2);
       let tx = PAD;
       if (portal) {
@@ -1953,6 +1981,448 @@
       }
       txt('SZÓSTKI POWIATU PIASECZYŃSKIEGO', tx, fy + 62, 32, 800, GOLD, 'left', CF, W - PAD - tx);
       txt(location.host ? location.host + location.pathname.replace(/index\.html$/, '').replace(/\/$/, '') : 'Ranking ELO drużyn powiatu', tx, fy + 94, 24, 600, MUTED, 'left', BF, W - PAD - tx);
+    }
+
+    // ============================================================================
+    // ADMIN: GENERATOR GRAFIK (zakładka "Grafiki" – tylko w trybie narzędzi)
+    // 1) grafika drużyny  2) podium ligi / edycji  3) Mistrzostwa Powiatu (zakwalifikowani, koszyki)  4) drużyna miesiąca
+    // Wszystko rysowane na canvasie (bez bibliotek), jak istniejąca grafika drużyny z Strefy Kibica.
+    // ============================================================================
+    const AG = { kind: 'team', fmt: 'post', theme: 'light', team: '', comp: '', month: '', mpMode: 'origin', mpOrigin: '__all', token: 0, url: '', blob: null, logos: new Map(), timer: 0, name: 'grafika' };
+    const AG_KINDS = [['team', 'Drużyna'], ['podium', 'Podium ligi / edycji'], ['mp', 'Mistrzostwa Powiatu'], ['month', 'Drużyna miesiąca']];
+
+    function agMonthLabel(key) {
+      const m = /^(\d{4})-(\d{2})$/.exec(key || '');
+      if (!m) return '';
+      const s = new Date(+m[1], +m[2] - 1, 1).toLocaleDateString('pl-PL', { month: 'long', year: 'numeric' });
+      return s.replace(/\s*r\.?$/i, '');
+    }
+    // lista rozgrywek, które mają już podium (czyli są zakończone) – najnowsze na górze
+    function agPodiumList() {
+      const seen = new Map();
+      STATE.matches.forEach(m => {
+        if (isSparingMatch(m) || m.tier === 'Mecz Specjalny' || m.edition === 'Przepustka El. MP') return;
+        const key = [m.comp, m.tier || '', m.edition || ''].join('||');
+        const cur = seen.get(key);
+        if (!cur) seen.set(key, { comp: m.comp, tier: m.tier || '', edition: m.edition || '', last: String(m.date) });
+        else if (String(m.date) > cur.last) cur.last = String(m.date);
+      });
+      return [...seen.values()].filter(x => x.comp && computeCompetitionPodium(x.comp, x.tier, x.edition).length)
+        .sort((a, b) => b.last.localeCompare(a.last))
+        .map((x, i) => ({ ...x, id: String(i), label: `${x.comp} • ${x.tier || 'Główny'} • ${x.edition || 'Pojedyncza edycja'} (${plDate(x.last)})` }));
+    }
+    function agMonths() {
+      return [...new Set(STATE.matches.map(m => String(m.date).slice(0, 7)).filter(k => /^\d{4}-\d{2}$/.test(k)))].sort().reverse();
+    }
+    // ranking miesiąca: przyrost ELO w danym miesiącu (tylko dodatni), tak jak kafelek "Forma Miesiąca"
+    function agMonthRanking(key) {
+      const st = {};
+      const get = n => st[n] || (st[n] = { name: n, gain: 0, n: 0, w: 0, r: 0, l: 0 });
+      STATE.matches.forEach(m => {
+        if (String(m.date).slice(0, 7) !== key) return;
+        const ga = parseInt(m.goalsA, 10) || 0, gb = parseInt(m.goalsB, 10) || 0;
+        const resA = (typeof m.resA === 'number' && !isNaN(m.resA)) ? m.resA : (ga > gb ? 1 : ga === gb ? 0.5 : 0);
+        [[m.teamA, m.eloPostA - m.eloPreA, resA], [m.teamB, m.eloPostB - m.eloPreB, 1 - resA]].forEach(([n, d, res]) => {
+          const t = get(n); t.gain += d; t.n++;
+          if (res > 0.5) t.w++; else if (res === 0.5) t.r++; else t.l++;
+        });
+      });
+      return Object.values(st).filter(t => t.gain > 0).sort((a, b) => b.gain - a.gain || b.w - a.w);
+    }
+    function agMpData() {
+      const mp = STATE.powiat2027 || {};
+      const slots = mp.totalSlots || 20;
+      const list = (mp.qualifiedTeams || []).map(q => {
+        const t = STATE.teams.find(x => x.name.toLowerCase() === String(q.name).toLowerCase());
+        return { name: t ? t.name : q.name, origin: q.origin || 'Kwalifikacja ligowa', elo: t ? t.elo : 1000 };
+      });
+      const origins = [...new Set(list.map(x => x.origin))];
+      return { list, origins, slots, date: mp.date || '', loc: mp.location || '', year: (String(mp.date || '').match(/(\d{4})/) || [])[1] || '' };
+    }
+
+    // ---------- panel ----------
+    function renderAgView() {
+      const kinds = document.getElementById('ag-kinds'), ctr = document.getElementById('ag-controls'), fmt = document.getElementById('ag-fmt');
+      if (!kinds || !ctr) return;
+      kinds.innerHTML = AG_KINDS.map(([k, l]) => `<button type="button" onclick="agSet('kind','${k}')" class="px-3.5 py-2 rounded-xl text-xs font-bold transition ${AG.kind === k ? 'bg-gold-500 text-slate-950' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}">${l}</button>`).join('');
+      const sel = (id, opts, val, handler) => `<select id="${id}" onchange="${handler}" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">${opts.map(([v, l]) => `<option value="${escapeHtmlAttr(v)}"${String(v) === String(val) ? ' selected' : ''}>${statsEsc(l)}</option>`).join('')}</select>`;
+      const field = (label, html) => `<label class="block space-y-1"><span class="text-[11px] font-bold text-slate-400">${label}</span>${html}</label>`;
+      let html = '', hint = '';
+      if (AG.kind === 'team') {
+        const teams = [...STATE.teams].sort((a, b) => (a.rank || 9999) - (b.rank || 9999));
+        if (!AG.team || !teams.some(t => t.name === AG.team)) AG.team = teams[0] ? teams[0].name : '';
+        html = field('Drużyna', sel('ag-team', teams.map(t => [t.name, `#${t.rank} ${t.name}${t.active ? '' : ' (nieaktywna)'}`]), AG.team, "agSet('team',this.value)"));
+        hint = 'Taka sama grafika jak „Generuj grafikę” w Strefie Kibica, ale dla dowolnej drużyny.';
+      } else if (AG.kind === 'podium') {
+        const list = agPodiumList();
+        if (!list.length) html = '<p class="text-xs text-slate-400 sm:col-span-2">Żadne rozgrywki nie mają jeszcze podium (podium powstaje z premii za miejsca w arkuszu).</p>';
+        else {
+          if (!list.some(x => x.id === AG.comp)) AG.comp = list[0].id;
+          html = field('Rozgrywki (tylko zakończone, z podium)', sel('ag-comp', list.map(x => [x.id, x.label]), AG.comp, "agSet('comp',this.value)"));
+        }
+        hint = 'Podium bierze się z tych samych premii co w „Historii Rozgrywek”.';
+      } else if (AG.kind === 'mp') {
+        const d = agMpData();
+        html = field('Co pokazać', sel('ag-mpmode', [['origin', 'Zakwalifikowani (wg rozgrywek)'], ['pots', 'Koszyki']], AG.mpMode, "agSet('mpMode',this.value)"));
+        if (AG.mpMode === 'origin') {
+          if (AG.mpOrigin !== '__all' && !d.origins.includes(AG.mpOrigin)) AG.mpOrigin = '__all';
+          html += field('Rozgrywki, z których awans', sel('ag-mporigin', [['__all', `Wszystkie (${d.list.length} drużyn)`], ...d.origins.map(o => [o, `${o} (${d.list.filter(x => x.origin === o).length})`])], AG.mpOrigin, "agSet('mpOrigin',this.value)"));
+        }
+        hint = `Dane z zakładki Mistrzostwa Powiatu (${d.list.length} / ${d.slots} zakwalifikowanych).`;
+      } else if (AG.kind === 'month') {
+        const months = agMonths();
+        if (!months.length) html = '<p class="text-xs text-slate-400 sm:col-span-2">Brak meczów.</p>';
+        else {
+          if (!months.includes(AG.month)) {
+            const now = new Date(), pm = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+            const pmKey = pm.getFullYear() + '-' + String(pm.getMonth() + 1).padStart(2, '0');
+            AG.month = months.includes(pmKey) ? pmKey : months[0];
+          }
+          html = field('Miesiąc', sel('ag-month', months.map(k => [k, agMonthLabel(k)]), AG.month, "agSet('month',this.value)"));
+        }
+        hint = 'Drużyna miesiąca = największy przyrost ELO w miesiącu (jak kafelek „Forma Miesiąca”; liczą się wszystkie mecze, także sparingi).';
+      }
+      ctr.innerHTML = html + (hint ? `<p class="text-[11px] text-slate-500 sm:col-span-2">${hint}</p>` : '');
+      const seg = (cur, items, h) => items.map(([v, l]) => `<button type="button" onclick="${h}('${v}')" class="px-3 py-1.5 rounded-full text-xs font-bold ${cur === v ? 'bg-gold-500 text-slate-950' : 'bg-slate-800 text-slate-300'}">${l}</button>`).join('');
+      fmt.innerHTML = `<div class="flex gap-1.5">${seg(AG.fmt, [['post', 'Post 4:5'], ['square', 'Facebook 1:1'], ['story', 'Story 9:16']], "agFmt")}</div>` +
+        (AG.kind === 'team' ? '' : `<div class="flex gap-1.5">${seg(AG.theme, [['light', 'Jasna'], ['dark', 'Ciemna']], "agTheme")}</div>`);
+      agGenerate();
+    }
+    function agSet(k, v) {
+      if (k === 'kind') { AG.kind = v; renderAgView(); return; }
+      AG[k] = v;
+      if (k === 'mpMode') { renderAgView(); return; }
+      agGenerate();
+    }
+    function agFmt(v) { AG.fmt = v; renderAgView(); }
+    function agTheme(v) { AG.theme = v; renderAgView(); }
+
+    function agImg(name) {
+      if (AG.logos.has(name)) return Promise.resolve(AG.logos.get(name));
+      return gfxImg(resolveTeamLogo(name)).then(im => { if (im) AG.logos.set(name, im); return im; });
+    }
+    function agStatus(msg) {
+      const st = document.getElementById('ag-status'), im = document.getElementById('ag-img');
+      if (st) { st.textContent = msg || ''; st.hidden = !msg; }
+      if (im && msg) im.hidden = true;
+      const dl = document.getElementById('ag-dl'), sh = document.getElementById('ag-share');
+      if (dl && msg) dl.disabled = true;
+      if (sh && msg) sh.hidden = true;
+    }
+    function agGenerate() {
+      clearTimeout(AG.timer);
+      AG.timer = setTimeout(agRun, 60);
+    }
+    async function agRun() {
+      const my = ++AG.token;
+      agStatus('Generuję grafikę…');
+      try {
+        if (document.fonts && document.fonts.load) {
+          try { await Promise.all([document.fonts.load('800 60px "Barlow Condensed"'), document.fonts.load('700 30px "Barlow Condensed"'), document.fonts.load('600 30px "Barlow"'), document.fonts.load('700 30px "Barlow"'), document.fonts.load('800 30px "Barlow"')]); } catch (e) {}
+        }
+        const story = AG.fmt === 'story', W = 1080, H = story ? 1920 : (AG.fmt === 'square' ? 1080 : 1350);
+        const spec = agSpec();                       // { names, draw(kit) , file } albo { error }
+        if (!spec) { agStatus('Brak danych dla tego wyboru.'); return; }
+        if (spec.error) { agStatus(spec.error); return; }
+        const logos = {};
+        await Promise.all([...new Set(spec.names)].map(async n => { logos[n] = await agImg(n); }));
+        const portal = await gfxImg((document.getElementById('portal-logo-img') || {}).src);
+        if (my !== AG.token) return;
+        const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+        const c = cv.getContext('2d');
+        spec.draw(c, W, H, story, logos, portal);
+        const blob = await new Promise((res, rej) => cv.toBlob(b => b ? res(b) : rej(new Error('toBlob')), 'image/png'));
+        if (my !== AG.token) return;
+        if (AG.url) URL.revokeObjectURL(AG.url);
+        AG.blob = blob; AG.url = URL.createObjectURL(blob); AG.name = (spec.file || 'grafika') + '-' + AG.fmt + '.png';
+        const im = document.getElementById('ag-img'), dl = document.getElementById('ag-dl'), sh = document.getElementById('ag-share');
+        im.src = AG.url; im.hidden = false; agStatus(''); dl.disabled = false;
+        try { const f = new File([blob], 'x.png', { type: 'image/png' }); sh.hidden = !(navigator.canShare && navigator.canShare({ files: [f] })); } catch (e) { sh.hidden = true; }
+      } catch (e) {
+        console.error(e);
+        if (my === AG.token) agStatus('Nie udało się wygenerować grafiki.');
+      }
+    }
+    function agDownload() {
+      if (!AG.url) return;
+      const a = document.createElement('a'); a.href = AG.url; a.download = AG.name;
+      document.body.appendChild(a); a.click(); a.remove();
+    }
+    async function agShare() {
+      if (!AG.blob) return;
+      try { await navigator.share({ files: [new File([AG.blob], AG.name, { type: 'image/png' })] }); }
+      catch (e) { if (!e || e.name !== 'AbortError') agDownload(); }
+    }
+
+    // co rysujemy: lista drużyn do pobrania logo + funkcja rysująca
+    function agSpec() {
+      if (AG.kind === 'team') {
+        const team = STATE.teams.find(t => t.name === AG.team);
+        if (!team) return null;
+        const d = gfxData(team);
+        const names = [team.name, ...d.top.map(t => t.name), ...d.rows.map(r => r.t.name)];
+        return { names, file: slugify(team.name) || 'druzyna', draw: (c, W, H, story, logos, portal) => gfxDraw(c, W, H, story, team, d, logos, portal) };
+      }
+      if (AG.kind === 'podium') {
+        const item = agPodiumList().find(x => x.id === AG.comp);
+        if (!item) return null;
+        const pod = computeCompetitionPodium(item.comp, item.tier, item.edition);
+        const places = [1, 2, 3].map(p => pod.filter(x => x.place === p).map(x => x.team).filter((t, i, a) => a.indexOf(t) === i));
+        const ms = STATE.matches.filter(m => m.comp === item.comp && (m.tier || '') === item.tier && (m.edition || '') === item.edition);
+        const teams = new Set(); let goals = 0;
+        ms.forEach(m => { teams.add(m.teamA); teams.add(m.teamB); goals += (parseInt(m.goalsA, 10) || 0) + (parseInt(m.goalsB, 10) || 0); });
+        const info = `${teams.size} drużyn  •  ${ms.length} meczów  •  ${goals} bramek`;
+        const sub = [item.tier, item.edition].filter(Boolean).join('  •  ');
+        return { names: places.flat(), file: 'podium-' + (slugify(item.comp + ' ' + item.edition) || 'rozgrywki'), draw: (c, W, H, story, logos, portal) => agDrawPodium(c, W, H, story, logos, portal, item.comp, sub, info, places) };
+      }
+      if (AG.kind === 'mp') {
+        const d = agMpData();
+        if (AG.mpMode === 'pots') {
+          const sorted = [...d.list].sort((a, b) => b.elo - a.elo);
+          return { names: sorted.map(t => t.name), file: 'mistrzostwa-powiatu-koszyki', draw: (c, W, H, story, logos, portal) => agDrawPots(c, W, H, story, logos, portal, d, sorted) };
+        }
+        const all = AG.mpOrigin === '__all';
+        const teams = all ? d.list : d.list.filter(x => x.origin === AG.mpOrigin);
+        if (!teams.length) return { error: 'Brak zakwalifikowanych drużyn do pokazania.' };
+        return { names: teams.map(t => t.name), file: 'mistrzostwa-powiatu-' + (all ? 'zakwalifikowani' : slugify(AG.mpOrigin)), draw: (c, W, H, story, logos, portal) => agDrawQualified(c, W, H, story, logos, portal, d, teams, all) };
+      }
+      if (AG.kind === 'month') {
+        const rank = agMonthRanking(AG.month);
+        if (!rank.length) return { error: 'W tym miesiącu żadna drużyna nie ma dodatniego przyrostu ELO.' };
+        const top = rank[0], chasers = rank.slice(1, 3);
+        const t = STATE.teams.find(x => x.name === top.name) || { name: top.name, elo: 1000, city: '' };
+        return { names: [top.name, ...chasers.map(x => x.name)], file: 'druzyna-miesiaca-' + AG.month, draw: (c, W, H, story, logos, portal) => agDrawMonth(c, W, H, story, logos, portal, AG.month, top, t, chasers) };
+      }
+      return null;
+    }
+
+    // ---------- wspólny zestaw do rysowania (jasny motyw jak w poście z kwalifikacjami albo ciemny jak grafika drużyny) ----------
+    function agKit(c, W, H, story, logos, portal) {
+      const dark = AG.theme === 'dark';
+      const P = dark
+        ? { INK: '#f5f1e6', MUTED: '#9a9384', GOLD: '#e2b64e', CARD: 'rgba(255,255,255,.06)', LINE: 'rgba(226,182,78,.30)', DOT: '#14110c' }
+        : { INK: '#111111', MUTED: '#6b6556', GOLD: '#b8851f', CARD: 'rgba(255,255,255,.78)', LINE: 'rgba(0,0,0,.12)', DOT: '#111111' };
+      const CF = '"Barlow Condensed", "Barlow", system-ui, sans-serif', BF = '"Barlow", system-ui, sans-serif';
+      const PAD = 64, top = story ? 190 : 0, bottom = story ? H - 190 : H, sq = W === H;
+      const txt = (s, x, y, size, weight, color, align, fam, maxW) => {
+        let out = String(s), px = size;
+        c.font = `${weight} ${px}px ${fam || BF}`;
+        if (maxW) {
+          while (c.measureText(out).width > maxW && px > size * 0.55) { px -= 2; c.font = `${weight} ${px}px ${fam || BF}`; }
+          if (c.measureText(out).width > maxW) { while (out.length > 1 && c.measureText(out + '…').width > maxW) out = out.slice(0, -1); out += '…'; }
+        }
+        c.textAlign = align || 'left'; c.textBaseline = 'alphabetic'; c.fillStyle = color; c.fillText(out, x, y);
+      };
+      const rr = (x, y, w, h, r) => { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); };
+      const logo = (name, cx, cy, r, ring, ringW) => {
+        const im = logos[name];
+        c.save(); c.beginPath(); c.arc(cx, cy, r, 0, Math.PI * 2); c.closePath();
+        c.fillStyle = im ? '#ffffff' : (dark ? '#2a2314' : '#ece6d6'); c.fill(); c.clip();
+        if (im) {
+          const box = (r - r * 0.06) * 2, sc = Math.min(box / im.width, box / im.height), w = im.width * sc, h = im.height * sc;
+          c.drawImage(im, cx - w / 2, cy - h / 2, w, h);
+        }
+        c.restore();
+        if (!im) {
+          const ini = String(name).split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase();
+          txt(ini, cx, cy + r * 0.3, r * 0.9, 800, P.GOLD, 'center', CF);
+        }
+        if (ring) { c.beginPath(); c.arc(cx, cy, r + ringW / 2, 0, Math.PI * 2); c.lineWidth = ringW; c.strokeStyle = ring; c.stroke(); }
+      };
+      // tło: heksagony + złota wstęga w rogu
+      const bg = () => {
+        let g = c.createLinearGradient(0, 0, 0, H);
+        if (dark) { g.addColorStop(0, '#0d0c0a'); g.addColorStop(1, '#1b1509'); } else { g.addColorStop(0, '#fbf9f4'); g.addColorStop(1, '#ece7dc'); }
+        c.fillStyle = g; c.fillRect(0, 0, W, H);
+        const s = 78, hh = s * Math.sqrt(3) / 2;
+        c.lineWidth = 2; c.strokeStyle = dark ? 'rgba(226,182,78,.07)' : 'rgba(0,0,0,.055)';
+        for (let row = -1; row * hh < H + hh; row++) {
+          for (let col = -1; col * s * 1.5 < W + s; col++) {
+            const cx = col * s * 1.5, cy = row * hh * 2 + (col % 2 ? hh : 0);
+            c.beginPath();
+            for (let k = 0; k < 6; k++) { const a = Math.PI / 3 * k; const px = cx + s * 0.96 * Math.cos(a), py = cy + s * 0.96 * Math.sin(a); k ? c.lineTo(px, py) : c.moveTo(px, py); }
+            c.closePath(); c.stroke();
+          }
+        }
+        // duże delikatne koło w rogu
+        c.beginPath(); c.arc(W * 0.95, H * 0.84, 330, 0, Math.PI * 2); c.lineWidth = 56; c.strokeStyle = dark ? 'rgba(226,182,78,.07)' : 'rgba(201,154,51,.13)'; c.stroke();
+        // złota wstęga w prawym górnym rogu
+        g = c.createLinearGradient(W * 0.78, 0, W, H * 0.1);
+        g.addColorStop(0, dark ? 'rgba(226,182,78,.0)' : 'rgba(201,154,51,0)'); g.addColorStop(0.5, '#e2b64e'); g.addColorStop(1, '#a8761a');
+        c.beginPath(); c.moveTo(W * 0.80, 0); c.quadraticCurveTo(W * 0.97, H * 0.006, W, H * 0.085);
+        c.lineTo(W, H * 0.085 - 34); c.quadraticCurveTo(W * 0.985, H * 0.02, W * 0.92, 0); c.closePath();
+        c.globalAlpha = dark ? 0.8 : 1; c.fillStyle = g; c.fill(); c.globalAlpha = 1;
+      };
+      // tytuł: 1 albo 2 linie, możliwie największy; zwraca y pod tytułem
+      const title = (text, y0, maxSize) => {
+        if (sq) maxSize = Math.min(maxSize, 78);   // kwadrat: mniejszy tytuł, żeby zmieścić treść
+        const words = String(text).toUpperCase().split(/\s+/).filter(Boolean), maxW = W - 2 * PAD - 40;
+        const meas = (s, px) => { c.font = `800 ${px}px ${CF}`; return c.measureText(s).width; };
+        const fit = (lines) => { let px = maxSize; while (px > 40 && Math.max(...lines.map(l => meas(l, px))) > maxW) px -= 2; return px; };
+        let best = { lines: [words.join(' ')], px: fit([words.join(' ')]) };
+        if (words.length > 1) {
+          let two = null;
+          for (let k = 1; k < words.length; k++) {
+            const ls = [words.slice(0, k).join(' '), words.slice(k).join(' ')], px = fit(ls);
+            const bal = Math.abs(meas(ls[0], px) - meas(ls[1], px));
+            if (!two || px > two.px || (px === two.px && bal < two.bal)) two = { lines: ls, px, bal };
+          }
+          if (two && two.px > best.px * 1.12) best = two;
+        }
+        let y = y0 + best.px * 0.82;
+        best.lines.forEach((l, i) => { txt(l, W / 2, y + i * best.px * 0.95, best.px, 800, P.INK, 'center', CF); });
+        return y + (best.lines.length - 1) * best.px * 0.95 + 18;
+      };
+      const footer = () => {
+        const fy = bottom - (sq ? 96 : 132);
+        c.fillStyle = P.LINE; c.fillRect(PAD, fy, W - 2 * PAD, 2);
+        let tx = PAD;
+        const lh = sq ? 58 : 78, ly = fy + (sq ? 16 : 22);
+        if (portal) { const w = Math.round(portal.width * (lh / portal.height)); c.drawImage(portal, PAD, ly, w, lh); tx = PAD + w + 22; }
+        txt('SZÓSTKI POWIATU PIASECZYŃSKIEGO', tx, fy + (sq ? 46 : 62), sq ? 28 : 32, 800, P.GOLD, 'left', CF, W - PAD - tx);
+        txt(location.host ? location.host + location.pathname.replace(/index\.html$/, '').replace(/\/$/, '') : 'Ranking ELO drużyn powiatu', tx, fy + (sq ? 72 : 94), sq ? 21 : 24, 600, P.MUTED, 'left', BF, W - PAD - tx);
+        return fy;
+      };
+      return { P, CF, BF, PAD, top, bottom, txt, rr, logo, bg, title, footer, dark };
+    }
+
+    // ---------- 3a. Mistrzostwa Powiatu: zakwalifikowani (jak w przykładowym poście) ----------
+    function agDrawQualified(c, W, H, story, logos, portal, d, teams, all) {
+      const k = agKit(c, W, H, story, logos, portal), { P, CF, BF, PAD, txt } = k;
+      k.bg();
+      const kicker = `ZAKWALIFIKOWANI DO MISTRZOSTW POWIATU${d.year ? ' ' + d.year : ''}`;
+      txt(kicker, W / 2, k.top + 84, 30, 700, P.GOLD, 'center', CF, W - 2 * PAD - 120);
+      const sub = [d.loc, d.date].filter(Boolean).join('  •  ');
+      let y;
+      if (all) y = k.title('Zakwalifikowane drużyny', k.top + 100, 120);
+      else y = k.title(AG.mpOrigin, k.top + 100, 120);
+      if (sub) { txt(sub, W / 2, y + 30, 28, 600, P.MUTED, 'center', BF); y += 44; }
+      txt(`${d.list.length} / ${d.slots} drużyn`, W / 2, y + 30, 26, 700, P.MUTED, 'center', BF); y += 50;
+      const fy = k.footer(), yStart = y + 20, avail = fy - 24 - yStart;
+      if (!all) {
+        const n = teams.length, cols = n <= 4 ? n : (n <= 6 ? 3 : 4), rows = Math.ceil(n / cols), cellW = (W - 2 * PAD) / cols;
+        let r = Math.min(cellW * 0.42, 190);
+        while (rows * (2 * r + 96) > avail && r > 40) r -= 4;
+        const rowH = 2 * r + 96, y0 = yStart + Math.max(0, (avail - rows * rowH) / 2);
+        teams.forEach((t, i) => {
+          const row = Math.floor(i / cols), inRow = row === rows - 1 ? n - row * cols : cols;
+          const cx = (W - inRow * cellW) / 2 + (i - row * cols) * cellW + cellW / 2, cy = y0 + row * rowH + r;
+          k.logo(t.name, cx, cy, r, k.dark ? P.GOLD : null, 5);
+          txt(t.name.toUpperCase(), cx, cy + r + 56, 40, 800, P.INK, 'center', CF, cellW - 20);
+        });
+      } else {
+        // wszyscy: kompaktowa lista w dwóch kolumnach, pogrupowana wg rozgrywek
+        const sorted = [...d.origins].flatMap(o => teams.filter(t => t.origin === o));
+        const rows = Math.ceil(sorted.length / 2), rowH = Math.min(118, avail / Math.max(rows, 1)), colW = (W - 2 * PAD - 28) / 2;
+        const f = Math.min(1.35, rowH / 84), lr = Math.min(44, rowH * 0.36), yTop = yStart + Math.max(0, (avail - rows * rowH) / 2);
+        sorted.forEach((t, i) => {
+          const col = i < rows ? 0 : 1, ri = i < rows ? i : i - rows, x = PAD + col * (colW + 28), ry = yTop + ri * rowH;
+          k.rr(x, ry + 3, colW, rowH - 6, 16); c.fillStyle = P.CARD; c.fill(); c.lineWidth = 2; c.strokeStyle = P.LINE; c.stroke();
+          k.logo(t.name, x + 22 + lr, ry + rowH / 2, lr, null, 0);
+          txt(t.name, x + 40 + 2 * lr, ry + rowH / 2 + 4 * f, 30 * f, 800, P.INK, 'left', BF, colW - 60 - 2 * lr);
+          txt(t.origin, x + 40 + 2 * lr, ry + rowH / 2 + 28 * f, 19 * f, 600, P.MUTED, 'left', BF, colW - 60 - 2 * lr);
+        });
+      }
+    }
+
+    // ---------- 3b. Mistrzostwa Powiatu: koszyki ----------
+    function agDrawPots(c, W, H, story, logos, portal, d, sorted) {
+      const k = agKit(c, W, H, story, logos, portal), { P, CF, BF, PAD, txt } = k;
+      k.bg();
+      txt(`MISTRZOSTWA POWIATU${d.year ? ' ' + d.year : ''}`, W / 2, k.top + 84, 30, 700, P.GOLD, 'center', CF, W - 2 * PAD - 120);
+      let y = k.title('Podział na koszyki', k.top + 100, 118);
+      const sub = [d.loc, d.date].filter(Boolean).join('  •  ');
+      if (sub) { txt(sub, W / 2, y + 30, 28, 600, P.MUTED, 'center', BF); y += 44; }
+      txt(`Zakwalifikowane: ${d.list.length} / ${d.slots}  •  rozstawienie wg ELO`, W / 2, y + 30, 25, 700, P.MUTED, 'center', BF); y += 50;
+      const fy = k.footer(), yStart = y + 18, avail = fy - 22 - yStart;
+      const per = Math.ceil(d.slots / 4), gap = 22, cw = (W - 2 * PAD - gap) / 2, ch = (avail - gap) / 2;
+      const hdr = 66, rowH = Math.min(70, (ch - hdr - 14) / per);
+      const potCols = ['#fbbf24', '#e2b64e', '#38bdf8', '#c084fc'];
+      for (let p = 0; p < 4; p++) {
+        const x = PAD + (p % 2) * (cw + gap), yy = yStart + Math.floor(p / 2) * (ch + gap);
+        k.rr(x, yy, cw, ch, 22); c.fillStyle = P.CARD; c.fill(); c.lineWidth = 2; c.strokeStyle = P.LINE; c.stroke();
+        k.rr(x + 16, yy + 14, 40, 40, 12); c.fillStyle = potCols[p]; c.fill();
+        txt(String(p + 1), x + 36, yy + 45, 30, 800, '#14110c', 'center', CF);
+        txt('KOSZYK ' + (p + 1), x + 70, yy + 36, 34, 800, P.INK, 'left', CF);
+        txt(`miejsca #${p * per + 1}–#${Math.min(d.slots, (p + 1) * per)}`, x + 70, yy + 56, 19, 600, P.MUTED, 'left', BF);
+        for (let s = 0; s < per; s++) {
+          const g = p * per + s; if (g >= d.slots) break;
+          const t = sorted[g], ry = yy + hdr + s * rowH + rowH / 2, lr = Math.min(26, rowH * 0.38);
+          txt('#' + (g + 1), x + 18, ry + 8, 22, 800, P.MUTED, 'left', CF);
+          if (t) {
+            k.logo(t.name, x + 82 + lr, ry, lr, null, 0);
+            txt(t.name, x + 96 + 2 * lr, ry + 8, 26, 700, P.INK, 'left', BF, cw - 96 - 2 * lr - 86);
+            txt(t.elo.toFixed(0), x + cw - 18, ry + 8, 26, 800, P.GOLD, 'right', CF);
+          } else {
+            c.beginPath(); c.arc(x + 82 + lr, ry, lr, 0, Math.PI * 2); c.setLineDash([6, 6]); c.lineWidth = 2; c.strokeStyle = P.MUTED; c.stroke(); c.setLineDash([]);
+            txt('?', x + 82 + lr, ry + 8, 24, 800, P.MUTED, 'center', CF);
+            txt('Wolne miejsce', x + 96 + 2 * lr, ry + 7, 22, 600, P.MUTED, 'left', BF);
+          }
+        }
+      }
+    }
+
+    // ---------- 2. Podium ligi / edycji ----------
+    function agDrawPodium(c, W, H, story, logos, portal, comp, sub, info, places) {
+      const k = agKit(c, W, H, story, logos, portal), { P, CF, BF, PAD, txt } = k;
+      k.bg();
+      txt('PODIUM KOŃCOWE', W / 2, k.top + 84, 30, 700, P.GOLD, 'center', CF);
+      let y = k.title(comp, k.top + 100, 118);
+      if (sub) { txt(sub, W / 2, y + 30, 28, 600, P.MUTED, 'center', BF); y += 44; }
+      txt(info, W / 2, y + 30, 24, 600, P.MUTED, 'center', BF); y += 46;
+      const fy = k.footer(), base = fy - 36, sq = W === H, sc = story ? 1.3 : (sq ? 0.72 : 1), rs = sq ? 0.82 : 1;
+      const spec = [
+        { place: 2, x: W / 2 - 310, h: 270 * sc, r: 82 * rs, g: ['#eef0f3', '#9aa3ad'] },
+        { place: 1, x: W / 2, h: 370 * sc, r: 104 * rs, g: ['#f1cf76', '#b8851f'] },
+        { place: 3, x: W / 2 + 310, h: 200 * sc, r: 82 * rs, g: ['#e0a368', '#98592a'] }
+      ];
+      spec.forEach(s => {
+        const teams = places[s.place - 1] || [], pw = 280, top = base - s.h;
+        const g = c.createLinearGradient(0, top, 0, base); g.addColorStop(0, s.g[0]); g.addColorStop(1, s.g[1]);
+        c.fillStyle = g; k.rr(s.x - pw / 2, top, pw, s.h, 18); c.fill();
+        txt(String(s.place), s.x, top + Math.min(s.h - 24, 128), 120, 800, 'rgba(20,17,12,.88)', 'center', CF);
+        if (!teams.length) return;
+        const n = Math.min(teams.length, 2), r = n > 1 ? s.r * 0.7 : s.r, nameY = top - 22, cy = nameY - 54 - r;
+        teams.slice(0, 2).forEach((t, i) => {
+          const cx = s.x + (n > 1 ? (i ? 1 : -1) * 72 : 0);
+          k.logo(t, cx, cy, r, s.g[1], 6);
+          txt(t.toUpperCase(), cx, nameY, n > 1 ? 24 : 34, 800, P.INK, 'center', CF, n > 1 ? 136 : 300);
+        });
+      });
+    }
+
+    // ---------- 4. Drużyna miesiąca ----------
+    function agDrawMonth(c, W, H, story, logos, portal, month, top, team, chasers) {
+      const k = agKit(c, W, H, story, logos, portal), { P, CF, BF, PAD, txt } = k;
+      k.bg();
+      txt('DRUŻYNA MIESIĄCA', W / 2, k.top + 84, 34, 800, P.GOLD, 'center', CF);
+      let y = k.title(agMonthLabel(month), k.top + 100, 120);
+      const fy = k.footer(), sc = story ? 1.12 : 1, sq = W === H;
+      const r = sq ? 96 : 150 * sc, cy = y + (sq ? 26 : 36) + r;
+      k.logo(top.name, W / 2, cy, r, '#e2b64e', 8);
+      let ny = cy + r + (sq ? 70 : 96 * sc);
+      txt(top.name.toUpperCase(), W / 2, ny, sq ? 62 : 84, 800, P.INK, 'center', CF, W - 2 * PAD);
+      if (team.city) { txt(team.city, W / 2, ny + (sq ? 32 : 38), sq ? 24 : 28, 600, P.MUTED, 'center', BF, W - 2 * PAD); }
+      const cw = (W - 2 * PAD - 40) / 3, cy0 = ny + (sq ? 54 : 66 * sc), chh = sq ? 116 : 142;
+      [['PRZYROST ELO', '+' + top.gain.toFixed(1)], ['MECZE', String(top.n), `${top.w}W  ${top.r}R  ${top.l}P`], ['OBECNE ELO', team.elo.toFixed(0)]].forEach(([label, val, extra], i) => {
+        const x = PAD + i * (cw + 20);
+        k.rr(x, cy0, cw, chh, 22); c.fillStyle = P.CARD; c.fill(); c.lineWidth = 2; c.strokeStyle = P.LINE; c.stroke();
+        txt(label, x + cw / 2, cy0 + 38, 22, 700, P.MUTED, 'center', BF);
+        txt(val, x + cw / 2, cy0 + (sq ? (extra ? 80 : 92) : (extra ? 100 : 112)), sq ? 62 : 76, 800, P.GOLD, 'center', CF, cw - 24);
+        if (extra) txt(extra, x + cw / 2, cy0 + (sq ? 104 : 130), 22, 700, P.MUTED, 'center', BF);
+      });
+      if (chasers.length) {
+        let ry = cy0 + chh + (sq ? 42 : 52);
+        txt('NAJBLIŻSI KONKURENCI', W / 2, ry, 22, 700, P.MUTED, 'center', BF); ry += 16;
+        chasers.forEach((t, i) => {
+          const yy = ry + i * 76;
+          k.rr(PAD, yy, W - 2 * PAD, 66, 16); c.fillStyle = P.CARD; c.fill(); c.lineWidth = 2; c.strokeStyle = P.LINE; c.stroke();
+          txt('#' + (i + 2), PAD + 24, yy + 44, 30, 800, P.MUTED, 'left', CF);
+          k.logo(t.name, PAD + 116, yy + 33, 24, null, 0);
+          txt(t.name, PAD + 156, yy + 44, 30, 700, P.INK, 'left', BF, W - 2 * PAD - 156 - 190);
+          txt('+' + t.gain.toFixed(1) + ' ELO', W - PAD - 24, yy + 44, 30, 800, P.GOLD, 'right', CF);
+        });
+      }
     }
 
     function renderTeamAvatar(teamName, sizeClass = "w-8 h-8", textClass = "text-xs") {
@@ -2450,7 +2920,7 @@
       };
     })();
 
-    const STATS_TAB_NAMES = { ranking: 'Ranking ELO', matches: 'Ostatnie Mecze', team: 'Karta Drużyny', h2h: 'Porównywarka H2H', medals: 'Gablota Medalowa', competitions: 'Historia Rozgrywek', powiat: 'Mistrzostwa Powiatu', mapa: 'Mapa drużyn', lokalizacje: 'Lokalizacje (admin)' };
+    const STATS_TAB_NAMES = { ranking: 'Ranking ELO', matches: 'Ostatnie Mecze', team: 'Karta Drużyny', h2h: 'Porównywarka H2H', medals: 'Gablota Medalowa', competitions: 'Historia Rozgrywek', powiat: 'Mistrzostwa Powiatu', mapa: 'Mapa drużyn', lokalizacje: 'Lokalizacje (admin)', grafiki: 'Grafiki (admin)' };
     const STATS_KEY_STORE = 'szostki-stats-key';
     let statsDays = 30, statsData = null, statsChart = null, statsLoading = false, statsKeyMem = '';
 
@@ -2689,11 +3159,11 @@
     document.addEventListener('keydown', e => { if (e.key === 'Escape') menuToggle(false); });
 
     function switchTab(tab) {
-      if ((tab === 'stats' || tab === 'lokalizacje') && !STATE.pro) tab = 'ranking';
+      if ((tab === 'stats' || tab === 'lokalizacje' || tab === 'grafiki') && !STATE.pro) tab = 'ranking';
       STATE.activeTab = tab;
       Stats.tab(tab);
       menuToggle(false);
-      ['ranking', 'matches', 'team', 'h2h', 'medals', 'competitions', 'powiat', 'mapa', 'fans', 'stats', 'lokalizacje'].forEach(t => {
+      ['ranking', 'matches', 'team', 'h2h', 'medals', 'competitions', 'powiat', 'mapa', 'fans', 'stats', 'lokalizacje', 'grafiki'].forEach(t => {
         document.getElementById('view-' + t).classList.toggle('hidden', t !== tab);
         const btn = document.getElementById('tab-' + t);
         btn.classList.toggle('is-active', t === tab);
@@ -2709,6 +3179,7 @@
 
       document.getElementById('tab-stats').classList.toggle('hidden', !STATE.pro);
       document.getElementById('tab-lokalizacje').classList.toggle('hidden', !STATE.pro);
+      document.getElementById('tab-grafiki').classList.toggle('hidden', !STATE.pro);
 
       try {
         if (tab === 'ranking') renderRanking();
@@ -2725,6 +3196,7 @@
         else if (tab === 'mapa') renderMapView();
         else if (tab === 'fans') renderFansView();
         else if (tab === 'lokalizacje') renderLocationsView();
+        else if (tab === 'grafiki') renderAgView();
       } catch (err) {
         console.error("Błąd renderowania zakładki:", err);
       }
