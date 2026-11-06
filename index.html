@@ -506,6 +506,7 @@
       <button type="button" role="menuitem" onclick="switchTab('stats')" id="tab-stats" class="hidden menu-item"><span class="menu-label">Statystyki</span></button>
       <button type="button" role="menuitem" onclick="switchTab('lokalizacje')" id="tab-lokalizacje" class="hidden menu-item"><span class="menu-label">Lokalizacje</span><span id="rep-badge" class="hidden menu-badge">0</span></button>
       <button type="button" role="menuitem" onclick="switchTab('grafiki')" id="tab-grafiki" class="hidden menu-item"><span class="menu-label">Grafiki</span></button>
+      <button type="button" role="menuitem" onclick="switchTab('rankingi')" id="tab-rankingi" class="hidden menu-item"><span class="menu-label">Moje rankingi</span></button>
     </nav>
     <div class="menu-foot sm:hidden">
       <button type="button" onclick="shareView()">Udostępnij widok</button>
@@ -855,6 +856,8 @@
       </div>
       <div id="loc-body" class="space-y-2"></div>
     </div>
+
+    <div id="view-rankingi" class="hidden space-y-4"></div>
 
     <div id="view-grafiki" class="hidden space-y-4">
       <div class="panel rounded-2xl p-4 space-y-3">
@@ -1406,7 +1409,7 @@
         const data = await res.json();
         if (data && data.ok) {
           statsKeyMem = key;
-          try { sessionStorage.setItem(STATS_KEY_STORE, key); } catch (e) {}
+          persistKey(key);
           gateClose();
           enterPro();
         } else {
@@ -1430,6 +1433,7 @@
       document.getElementById('tab-stats').classList.remove('hidden');
       document.getElementById('tab-lokalizacje').classList.remove('hidden');
       document.getElementById('tab-grafiki').classList.remove('hidden');
+      document.getElementById('tab-rankingi').classList.remove('hidden');
       Stats.markOwner();
       renderPowiatView();
       try { repLoad(true); } catch (e) {}
@@ -1442,8 +1446,9 @@
       document.getElementById('tab-stats').classList.add('hidden');
       document.getElementById('tab-lokalizacje').classList.add('hidden');
       document.getElementById('tab-grafiki').classList.add('hidden');
-      if (STATE.activeTab === 'stats' || STATE.activeTab === 'lokalizacje' || STATE.activeTab === 'grafiki') switchTab('ranking');
-      statsKeyMem = ''; try { sessionStorage.removeItem(STATS_KEY_STORE); } catch (e) {}
+      document.getElementById('tab-rankingi').classList.add('hidden');
+      if (['stats', 'lokalizacje', 'grafiki', 'rankingi'].includes(STATE.activeTab)) switchTab('ranking');
+      statsKeyMem = ''; forgetKey();
       renderPowiatView();
     }
 
@@ -2975,6 +2980,8 @@
 
     const STATS_TAB_NAMES = { ranking: 'Ranking ELO', matches: 'Ostatnie Mecze', team: 'Karta Drużyny', h2h: 'Porównywarka H2H', medals: 'Gablota Medalowa', competitions: 'Historia Rozgrywek', powiat: 'Mistrzostwa Powiatu', mapa: 'Mapa drużyn', lokalizacje: 'Lokalizacje (admin)', grafiki: 'Grafiki (admin)' };
     const STATS_KEY_STORE = 'szostki-stats-key';
+    function persistKey(v) { try { sessionStorage.setItem(STATS_KEY_STORE, v); } catch (e) {} try { localStorage.setItem(STATS_KEY_STORE, v); } catch (e) {} }
+    function forgetKey() { try { sessionStorage.removeItem(STATS_KEY_STORE); } catch (e) {} try { localStorage.removeItem(STATS_KEY_STORE); } catch (e) {} }
     let statsDays = 30, statsData = null, statsChart = null, statsLoading = false, statsKeyMem = '';
 
     function statsEsc(s) {
@@ -2982,7 +2989,7 @@
     }
     function statsKey() {
       if (statsKeyMem) return statsKeyMem;
-      try { return sessionStorage.getItem(STATS_KEY_STORE) || ''; } catch (e) { return ''; }
+      try { const v = sessionStorage.getItem(STATS_KEY_STORE) || localStorage.getItem(STATS_KEY_STORE) || ''; if (v) statsKeyMem = v; return v; } catch (e) { return ''; }
     }
     function updateStatsRangeButtons() {
       [7, 30, 90].forEach(n => {
@@ -3004,7 +3011,7 @@
       const v = (document.getElementById('stats-key-input') || {}).value || '';
       if (!v) return;
       statsKeyMem = v;
-      try { sessionStorage.setItem(STATS_KEY_STORE, v); } catch (e) {}
+      persistKey(v);
       loadStats();
     }
     function renderStatsView() {
@@ -3029,7 +3036,7 @@
         const data = await res.json();
         if (!data.ok) {
           if (data.error === 'unauthorized') {
-            statsKeyMem = ''; try { sessionStorage.removeItem(STATS_KEY_STORE); } catch (e) {}
+            statsKeyMem = ''; forgetKey();
             renderStatsLogin('Nieprawidłowe hasło.');
             return;
           }
@@ -3212,11 +3219,11 @@
     document.addEventListener('keydown', e => { if (e.key === 'Escape') menuToggle(false); });
 
     function switchTab(tab) {
-      if ((tab === 'stats' || tab === 'lokalizacje' || tab === 'grafiki') && !STATE.pro) tab = 'ranking';
+      if ((tab === 'stats' || tab === 'lokalizacje' || tab === 'grafiki' || tab === 'rankingi') && !STATE.pro) tab = 'ranking';
       STATE.activeTab = tab;
       Stats.tab(tab);
       menuToggle(false);
-      ['ranking', 'matches', 'team', 'h2h', 'medals', 'competitions', 'powiat', 'mapa', 'fans', 'stats', 'lokalizacje', 'grafiki'].forEach(t => {
+      ['ranking', 'matches', 'team', 'h2h', 'medals', 'competitions', 'powiat', 'mapa', 'fans', 'stats', 'lokalizacje', 'grafiki', 'rankingi'].forEach(t => {
         document.getElementById('view-' + t).classList.toggle('hidden', t !== tab);
         const btn = document.getElementById('tab-' + t);
         btn.classList.toggle('is-active', t === tab);
@@ -3233,6 +3240,7 @@
       document.getElementById('tab-stats').classList.toggle('hidden', !STATE.pro);
       document.getElementById('tab-lokalizacje').classList.toggle('hidden', !STATE.pro);
       document.getElementById('tab-grafiki').classList.toggle('hidden', !STATE.pro);
+      document.getElementById('tab-rankingi').classList.toggle('hidden', !STATE.pro);
 
       try {
         if (tab === 'ranking') renderRanking();
@@ -3250,6 +3258,7 @@
         else if (tab === 'fans') renderFansView();
         else if (tab === 'lokalizacje') renderLocationsView();
         else if (tab === 'grafiki') renderAgView();
+        else if (tab === 'rankingi') renderPrivView();
       } catch (err) {
         console.error("Błąd renderowania zakładki:", err);
       }
@@ -5991,7 +6000,7 @@
       catch (e) { toast('Skrypt Google zwrócił błąd – otwórz Apps Script → Wykonania i sprawdź komunikat'); return null; }
       if (!d.ok) {
         if (d.error === 'bad_request') toast('Skrypt Google ma starą wersję – opublikuj nową wersję wdrożenia (Wdróż → Zarządzaj wdrożeniami)');
-        else if (d.error === 'unauthorized') { statsKeyMem = ''; try { sessionStorage.removeItem(STATS_KEY_STORE); } catch (e) {} toast('Nieprawidłowe hasło – odblokuj tryb narzędzi ponownie'); }
+        else if (d.error === 'unauthorized') { statsKeyMem = ''; forgetKey(); toast('Nieprawidłowe hasło – odblokuj tryb narzędzi ponownie'); }
         else toast('Nie udało się zapisać (' + (d.error || 'błąd') + ')');
         return null;
       }
@@ -7005,6 +7014,89 @@
 
   awLoad();
 })();
+  </script>
+
+  <script>
+  // ===== Tryb narzędzi zostaje po odświeżeniu / zamknięciu karty (do kliknięcia „Wyjdź”) + prywatne rankingi admina =====
+  (function () {
+    const LS = 'szostki-private-rankings', PRO_LS = 'szostki-stats-key';
+    const esc = s => (typeof statsEsc === 'function' ? statsEsc(s) : String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])));
+    const attr = s => (typeof escapeHtmlAttr === 'function' ? escapeHtmlAttr(s) : esc(s));
+    const norm = s => (typeof normalizeKey === 'function' ? normalizeKey(s) : String(s).toLowerCase());
+    let lists = [], cur = '';
+    try { lists = JSON.parse(localStorage.getItem(LS) || '[]'); if (!Array.isArray(lists)) lists = []; } catch (e) { lists = []; }
+    lists = lists.filter(l => l && l.id && Array.isArray(l.teams));
+    const save = () => { try { localStorage.setItem(LS, JSON.stringify(lists)); } catch (e) {} };
+    const byId = id => lists.find(l => l.id === id);
+    const teamOf = n => STATE.teams.find(t => t.name === n);
+
+    window.renderPrivView = function () {
+      const root = document.getElementById('view-rankingi'); if (!root) return;
+      if (!byId(cur)) cur = lists[0] ? lists[0].id : '';
+      const l = byId(cur);
+      const chips = lists.map(x => `<button type="button" data-pv="sel" data-id="${attr(x.id)}" class="px-3.5 py-2 rounded-xl text-xs font-bold transition ${x.id === cur ? 'bg-gold-500 text-slate-950' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'}">${esc(x.name)} <span class="opacity-70">(${x.teams.length})</span></button>`).join('');
+      let body = '';
+      if (l) {
+        const rows = l.teams.map(n => ({ n, t: teamOf(n) })).sort((a, b) => ((b.t ? b.t.elo : -1) - (a.t ? a.t.elo : -1)));
+        body = `<div class="panel rounded-2xl p-4 space-y-3">
+          <div class="flex flex-wrap items-center gap-2">
+            <input id="pv-name" value="${attr(l.name)}" maxlength="60" class="flex-1 min-w-[10rem] bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white" aria-label="Nazwa rankingu">
+            <button type="button" data-pv="rename" class="px-3 py-2 rounded-xl text-xs font-bold bg-slate-800 text-slate-200">Zmień nazwę</button>
+            <button type="button" data-pv="del" class="px-3 py-2 rounded-xl text-xs font-bold bg-rose-500/15 text-rose-400">Usuń ranking</button>
+          </div>
+          <div class="space-y-1.5">
+            <input type="search" id="pv-search" placeholder="Dodaj drużynę – wpisz nazwę…" autocomplete="off" oninput="privSearch(this.value)" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">
+            <div id="pv-res" class="space-y-1.5"></div>
+          </div>
+          ${rows.length ? `<div class="space-y-1.5">${rows.map((r, i) => `<div class="flex items-center gap-2.5 rounded-xl border border-slate-700/60 px-2.5 py-2">
+              <span class="w-6 text-center text-sm font-extrabold text-gold-400">${i + 1}</span>
+              ${renderTeamAvatar(r.n, 'w-9 h-9', 'text-xs')}
+              <span class="min-w-0 flex-1"><b class="block text-sm text-white truncate">${esc(r.n)}</b><small class="text-[11px] text-slate-400">${r.t ? `ELO ${Math.round(r.t.elo)} • #${r.t.rank} w rankingu głównym${r.t.city ? ' • ' + esc(r.t.city) : ''}${r.t.active ? '' : ' • nieaktywna'}` : 'brak w bazie'}</small></span>
+              <button type="button" data-pv="rm" data-team="${attr(r.n)}" class="shrink-0 w-8 h-8 rounded-lg bg-slate-800 text-slate-300 hover:text-rose-400" aria-label="Usuń z rankingu">✕</button></div>`).join('')}</div>`
+            : '<p class="text-xs text-slate-400">Ranking jest pusty – dodaj drużyny wyszukiwarką powyżej.</p>'}
+        </div>`;
+      }
+      root.innerHTML = `<div class="panel rounded-2xl p-4 space-y-3">
+        <div><h2 class="text-xl text-white">Moje rankingi</h2>
+        <p class="text-[11px] text-slate-400 mt-0.5">Prywatne listy drużyn do własnych obserwacji – układane wg aktualnego ELO. Widzisz je tylko Ty, zapisują się w tej przeglądarce (nie synchronizują się między urządzeniami).</p></div>
+        <div class="flex flex-wrap gap-2">${chips}</div>
+        <div class="flex gap-2"><input id="pv-new" placeholder="Nazwa nowego rankingu, np. Drużyny z Konstancina" maxlength="60" class="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">
+        <button type="button" data-pv="new" class="px-4 py-2 rounded-xl text-xs font-extrabold bg-gold-500 text-slate-950">+ Utwórz</button></div>
+      </div>${body}`;
+    };
+    window.privSearch = function (q) {
+      const box = document.getElementById('pv-res'), l = byId(cur); if (!box || !l) return;
+      const k = norm(q);
+      if (k.length < 2) { box.innerHTML = ''; return; }
+      const list = STATE.teams.filter(t => !l.teams.includes(t.name) && norm(t.name).includes(k)).sort((a, b) => b.elo - a.elo).slice(0, 6);
+      box.innerHTML = list.map(t => `<button type="button" data-pv="add" data-team="${attr(t.name)}" class="w-full flex items-center gap-2.5 text-left rounded-xl border border-slate-700/60 hover:border-gold-500 px-2.5 py-2">${renderTeamAvatar(t.name, 'w-8 h-8', 'text-xs')}<span class="min-w-0 flex-1"><b class="block text-sm text-white truncate">${esc(t.name)}</b><small class="text-[11px] text-slate-400">ELO ${Math.round(t.elo)}${t.city ? ' • ' + esc(t.city) : ''}</small></span><span class="text-gold-400 font-extrabold">＋</span></button>`).join('') || '<p class="text-[11px] text-slate-500">Nie znaleziono.</p>';
+    };
+    document.addEventListener('click', e => {
+      const el = e.target.closest && e.target.closest('[data-pv]'); if (!el || !STATE.pro) return;
+      const a = el.dataset.pv, l = byId(cur);
+      if (a === 'sel') cur = el.dataset.id;
+      else if (a === 'new') { const v = (document.getElementById('pv-new').value || '').trim(); if (!v) return; const x = { id: 'r' + Date.now().toString(36), name: v, teams: [] }; lists.push(x); cur = x.id; save(); }
+      else if (!l) return;
+      else if (a === 'rename') { const v = (document.getElementById('pv-name').value || '').trim(); if (v) { l.name = v; save(); } }
+      else if (a === 'del') { if (!confirm('Usunąć ranking „' + l.name + '”?')) return; lists = lists.filter(x => x !== l); cur = ''; save(); }
+      else if (a === 'add') { if (!l.teams.includes(el.dataset.team)) l.teams.push(el.dataset.team); save(); }
+      else if (a === 'rm') { l.teams = l.teams.filter(n => n !== el.dataset.team); save(); }
+      renderPrivView();
+      if (a === 'add') { const i = document.getElementById('pv-search'); if (i) i.focus(); }
+    });
+
+    // auto-wejście w tryb narzędzi, jeśli hasło zapamiętane; weryfikacja w tle
+    function resume() {
+      let key = ''; try { key = localStorage.getItem(PRO_LS) || ''; } catch (e) {}
+      if (!key || STATE.pro) return;
+      statsKeyMem = key; try { sessionStorage.setItem(PRO_LS, key); } catch (e) {}
+      try { enterPro(); if (STATE.activeTab === 'rankingi') renderPrivView(); } catch (e) { console.warn('[pro]', e); return; }
+      if (typeof STATS_URL === 'undefined' || !STATS_URL) return;
+      fetch(STATS_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: 'auth', key }) })
+        .then(r => r.json()).then(d => { if (d && !d.ok) exitPro(); }).catch(() => {});   // brak sieci = zostajemy w trybie
+    }
+    if (document.readyState === 'complete') setTimeout(resume, 0); else window.addEventListener('load', () => setTimeout(resume, 0));
+  })();
   </script>
 
   <!-- Cloudflare Web Analytics --><script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "4d20db7702f947ca8b95e5cb9904b104"}'></script><!-- End Cloudflare Web Analytics -->
