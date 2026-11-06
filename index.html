@@ -6463,6 +6463,512 @@
     }
   </script>
 
+  <!-- ODZNAKI, DRUŻYNA MIESIĄCA I ROKU (wybór w panelu admina: zakładka Grafiki) -->
+  <script>
+/* ============================================================================
+   nagrody.js – Szóstki Powiatu Piaseczyńskiego
+   • kafelek „Forma Miesiąca” -> „Największy Przyrost ELO” (poprzedni miesiąc)
+   • Drużyna Miesiąca (od września 2026) i Drużyna Roku (od 2026) – wybierane i zatwierdzane
+     w panelu admina: zakładka Grafiki. Strona sama podpowiada najlepsze drużyny.
+   • Odznaki na karcie drużyny: Drużyna Miesiąca, Drużyna Roku, Mistrz Powiatu (ulepsza się z każdym tytułem)
+   Zapis wyborów wymaga dopisku w skrypcie Google: plik apps-script-nagrody.gs
+   ============================================================================ */
+(function () {
+  'use strict';
+  if (window.__nagrody) return;
+  window.__nagrody = true;
+  if (typeof STATE === 'undefined' || typeof renderTeamCard !== 'function') { console.warn('[nagrody] nie znaleziono strony – dodatek wyłączony'); return; }
+
+  // ---------- ustawienia ----------
+  const AWARD_FROM_MONTH = '2026-09';      // wcześniejszych miesięcy nie pokazujemy
+  const AWARD_FROM_YEAR = 2026;            // wcześniejszych lat nie pokazujemy
+  const LS_KEY = 'szostki-awards';
+  const MP_FALLBACK = { '2025': 'Lakoksy Blanco CF', '2026': 'Lakoksy Blanco CF' };   // gdy arkusz nie ma jeszcze premii za te edycje
+
+  // ---------- pomocnicze ----------
+  const esc = s => (typeof statsEsc === 'function') ? statsEsc(s) : String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const attr = s => (typeof escapeHtmlAttr === 'function') ? escapeHtmlAttr(s) : esc(s);
+  const isSpar = m => (typeof isSparingMatch === 'function') ? isSparingMatch(m) : /sparing/i.test((m.comp || '') + ' ' + (m.tier || ''));
+  const pl = (n, a, b, c) => (typeof plural === 'function') ? plural(n, a, b, c) : (n === 1 ? a : (n % 10 >= 2 && n % 10 <= 4 && !(n % 100 >= 12 && n % 100 <= 14) ? b : c));
+  const say = msg => { try { toast(msg); } catch (e) {} };
+  const MONTHS = ['styczeń', 'luty', 'marzec', 'kwiecień', 'maj', 'czerwiec', 'lipiec', 'sierpień', 'wrzesień', 'październik', 'listopad', 'grudzień'];
+  const ABBR = ['STY', 'LUT', 'MAR', 'KWI', 'MAJ', 'CZE', 'LIP', 'SIE', 'WRZ', 'PAŹ', 'LIS', 'GRU'];
+  const monthLabel = key => { const m = /^(\d{4})-(\d{2})$/.exec(key || ''); return m ? MONTHS[+m[2] - 1] + ' ' + m[1] : String(key || ''); };
+  const monthAbbr = key => { const m = /^(\d{4})-(\d{2})$/.exec(key || ''); return m ? ABBR[+m[2] - 1] : '—'; };
+  const now = () => { const d = new Date(); return { y: String(d.getFullYear()), m: d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') }; };
+  const periodOf = (m, kind) => String(m.date).slice(0, kind === 'month' ? 7 : 4);
+  const fmtGain = g => (g >= 0 ? '+' : '') + g.toFixed(1);
+
+  // ---------- zapisane wybory (drużyna miesiąca / roku) ----------
+  const AW = { items: [] };
+  function clean(list) {
+    return (Array.isArray(list) ? list : []).filter(it => it && typeof it.team === 'string' && it.team &&
+      ((it.kind === 'month' && /^\d{4}-\d{2}$/.test(String(it.period))) || (it.kind === 'year' && /^\d{4}$/.test(String(it.period)))))
+      .map(it => ({ kind: it.kind, period: String(it.period), team: it.team.replace(/[<>]/g, ''), ts: String(it.ts || '') }));
+  }
+  function cacheSave() { try { localStorage.setItem(LS_KEY, JSON.stringify(AW.items)); } catch (e) {} }
+  try { AW.items = clean(JSON.parse(localStorage.getItem(LS_KEY) || '[]')); } catch (e) { AW.items = []; }
+  const awardFor = (kind, period) => AW.items.find(i => i.kind === kind && i.period === period) || null;
+
+  async function awLoad() {
+    if (typeof STATS_URL === 'undefined' || !STATS_URL) return;
+    try {
+      const res = await fetch(STATS_URL + (STATS_URL.includes('?') ? '&' : '?') + 'a=n&_=' + Date.now());
+      const d = await res.json();
+      if (d && d.ok && Array.isArray(d.items)) {
+        const next = clean(d.items);
+        const changed = JSON.stringify(next) !== JSON.stringify(AW.items);
+        AW.items = next; cacheSave();
+        if (changed) awRefresh();
+      }
+    } catch (e) { /* brak połączenia albo stary skrypt – zostają dane z pamięci przeglądarki */ }
+  }
+  function awRefresh() {
+    try { if (typeof setupKpiRotators === 'function') setupKpiRotators(); } catch (e) {}
+    try { awInjectBadges(); } catch (e) {}
+    try { if (STATE.pro && typeof AG !== 'undefined' && (AG.kind === 'month' || AG.kind === 'year') && document.getElementById('ag-controls')) { awDrawPicker(); agGenerate(); } } catch (e) {}
+  }
+  async function awPost(payload) {
+    const key = (typeof statsKey === 'function') ? statsKey() : '';
+    if (!key) { say('Sesja wygasła – odblokuj tryb narzędzi ponownie'); return null; }
+    try {
+      const res = await fetch(STATS_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(Object.assign({ key }, payload)) });
+      let d; try { d = await res.json(); } catch (e) { say('Skrypt Google zwrócił błąd – sprawdź Apps Script → Wykonania'); return null; }
+      if (!d.ok) {
+        if (d.error === 'bad_request') say('Skrypt Google nie ma jeszcze obsługi nagród – dodaj plik apps-script-nagrody.gs i opublikuj nową wersję wdrożenia');
+        else if (d.error === 'unauthorized') say('Nieprawidłowe hasło – odblokuj tryb narzędzi ponownie');
+        else say('Nie udało się zapisać (' + (d.error || 'błąd') + ')');
+        return null;
+      }
+      return d;
+    } catch (e) { say('Błąd połączenia – spróbuj ponownie'); return null; }
+  }
+
+  // ---------- 1. kafelek: „Największy Przyrost ELO” + drużyna miesiąca / roku w kafelkach ----------
+  function awKpiSlides() {
+    const out = [];
+    const latest = kind => AW.items.filter(i => i.kind === kind).sort((a, b) => b.period.localeCompare(a.period))[0];
+    const m = latest('month'); if (m) out.push({ icon: '📅', label: 'Drużyna Miesiąca', value: m.team, sub: monthLabel(m.period) });
+    const y = latest('year'); if (y) out.push({ icon: '🌟', label: 'Drużyna Roku', value: y.team, sub: 'Rok ' + y.period });
+    return out;
+  }
+  if (typeof buildKpiSlides === 'function') {
+    const _bks = window.buildKpiSlides;
+    window.buildKpiSlides = function () {
+      const r = _bks.apply(this, arguments);
+      try {
+        r.right = r.right.map(s => s.label === 'Forma Miesiąca' ? Object.assign({}, s, { label: 'Największy Przyrost ELO' }) : s);
+        const extra = awKpiSlides();
+        if (extra.length) r.right.splice(1, 0, ...extra);
+      } catch (e) { console.warn('[nagrody]', e); }
+      return r;
+    };
+  }
+
+  // ---------- 2. odznaki ----------
+  let uid = 0;
+  const starPath = (cx, cy, r) => { let d = ''; for (let i = 0; i < 10; i++) { const rr = i % 2 ? r * 0.45 : r, a = -Math.PI / 2 + i * Math.PI / 5; d += (i ? 'L' : 'M') + (cx + rr * Math.cos(a)).toFixed(2) + ' ' + (cy + rr * Math.sin(a)).toFixed(2); } return d + 'Z'; };
+  function laurel(color) {
+    let s = '';
+    for (let i = 0; i < 6; i++) {
+      const a = (100 + i * 26) * Math.PI / 180;
+      [[a, 0], [Math.PI - a, 1]].forEach(([ang]) => {
+        const x = 32 + 23.5 * Math.cos(ang), y = 32 + 23.5 * Math.sin(ang), rot = ang * 180 / Math.PI + 90;
+        s += `<ellipse cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" rx="3.4" ry="1.7" transform="rotate(${rot.toFixed(0)} ${x.toFixed(1)} ${y.toFixed(1)})" fill="${color}" opacity=".9"/>`;
+      });
+    }
+    return s;
+  }
+  const TIERS = {
+    1: { name: 'brązowa', ring: ['#f0c08a', '#9a5b25'], crown: ['#f6dc94', '#c99a33'], glow: 0 },
+    2: { name: 'srebrna', ring: ['#ffffff', '#8794a3'], crown: ['#fbecb0', '#dcae48'], glow: 0 },
+    3: { name: 'złota', ring: ['#fff2b3', '#d09a12'], crown: ['#fff6cf', '#e8b93f'], glow: 1 },
+    4: { name: 'diamentowa', ring: ['#a8f3ff', '#8a5cff'], crown: ['#ffffff', '#a8f3ff'], glow: 1 }
+  };
+  const defsFor = (id, ring, bg) => `<defs>
+      <linearGradient id="${id}r" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${ring[0]}"/><stop offset="1" stop-color="${ring[1]}"/></linearGradient>
+      <linearGradient id="${id}c" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff3c4"/><stop offset="1" stop-color="#e2b64e"/></linearGradient>
+      <radialGradient id="${id}b" cx=".5" cy=".4" r=".75"><stop offset="0" stop-color="${bg[0]}"/><stop offset="1" stop-color="${bg[1]}"/></radialGradient>
+      <clipPath id="${id}k"><circle cx="32" cy="32" r="27"/></clipPath></defs>`;
+  const FONT = 'Barlow Condensed,Barlow,sans-serif';
+
+  function champSvg(n) {
+    const t = TIERS[Math.min(n, 4)], id = 'aw' + (++uid);
+    const stars = n >= 3 ? [[22, 13], [32, 9.5], [42, 13]] : n === 2 ? [[26, 12], [38, 12]] : [];
+    return `<svg viewBox="0 0 64 64" width="64" height="64" aria-hidden="true">
+      <defs>
+        <linearGradient id="${id}r" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${t.ring[0]}"/><stop offset="1" stop-color="${t.ring[1]}"/></linearGradient>
+        <linearGradient id="${id}c" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${t.crown[0]}"/><stop offset="1" stop-color="${t.crown[1]}"/></linearGradient>
+        <radialGradient id="${id}b" cx=".5" cy=".4" r=".75"><stop offset="0" stop-color="#2d2412"/><stop offset="1" stop-color="#100c06"/></radialGradient>
+        <clipPath id="${id}k"><circle cx="32" cy="32" r="27"/></clipPath>
+      </defs>
+      ${t.glow ? `<circle cx="32" cy="32" r="31" fill="none" stroke="${t.ring[1]}" stroke-opacity=".4" stroke-width="2"/>` : ''}
+      <circle cx="32" cy="32" r="28" fill="url(#${id}b)" stroke="url(#${id}r)" stroke-width="4"/>
+      ${n >= 3 ? laurel(t.ring[0]) : ''}
+      <path d="M18 42L15 23l9 8 8-14 8 14 9-8-3 19z" fill="url(#${id}c)" stroke="${t.ring[1]}" stroke-width=".8" stroke-linejoin="round"/>
+      <rect x="18" y="43.5" width="28" height="5" rx="2" fill="url(#${id}c)" stroke="${t.ring[1]}" stroke-width=".8"/>
+      <circle cx="15" cy="22.5" r="2.2" fill="${t.crown[0]}"/><circle cx="32" cy="16.5" r="2.4" fill="${t.crown[0]}"/><circle cx="49" cy="22.5" r="2.2" fill="${t.crown[0]}"/>
+      ${stars.map(([x, y]) => `<path d="${starPath(x, y, 2.8)}" fill="${t.crown[0]}"/>`).join('')}
+      ${n >= 4 ? `<g clip-path="url(#${id}k)"><g class="aw-sh"><rect x="-14" y="0" width="9" height="64" fill="#fff" opacity=".42" transform="skewX(-20)"/></g></g>` : ''}
+      <circle cx="52" cy="52" r="9" fill="#14110c" stroke="url(#${id}r)" stroke-width="2"/>
+      <text x="52" y="56" text-anchor="middle" font-size="11" font-weight="800" fill="#fff" font-family="${FONT}">${n}×</text>
+    </svg>`;
+  }
+  function monthSvg(abbr) {
+    const id = 'aw' + (++uid);
+    return `<svg viewBox="0 0 64 64" width="64" height="64" aria-hidden="true">
+      ${defsFor(id, ['#9af5e8', '#1f8a7e'], ['#16403a', '#08181a'])}
+      <circle cx="32" cy="32" r="28" fill="url(#${id}b)" stroke="url(#${id}r)" stroke-width="4"/>
+      <rect x="19" y="18" width="26" height="24" rx="4" fill="#0d2623" stroke="url(#${id}r)" stroke-width="2"/>
+      <path d="M19 22a4 4 0 0 1 4-4h18a4 4 0 0 1 4 4v4H19z" fill="url(#${id}r)"/>
+      <rect x="25" y="14" width="3" height="7" rx="1.5" fill="url(#${id}r)"/><rect x="36" y="14" width="3" height="7" rx="1.5" fill="url(#${id}r)"/>
+      <path d="${starPath(32, 34, 6.2)}" fill="url(#${id}c)"/>
+      <rect x="16" y="45" width="32" height="12" rx="6" fill="#14110c" stroke="url(#${id}r)" stroke-width="1.6"/>
+      <text x="32" y="54.2" text-anchor="middle" font-size="9.5" font-weight="800" fill="#fff" font-family="${FONT}" letter-spacing=".5">${abbr}</text>
+    </svg>`;
+  }
+  function yearSvg(year) {
+    const id = 'aw' + (++uid);
+    return `<svg viewBox="0 0 64 64" width="64" height="64" aria-hidden="true">
+      ${defsFor(id, ['#ffe08a', '#c76bff'], ['#33195a', '#120a22'])}
+      <circle cx="32" cy="32" r="31" fill="none" stroke="#c76bff" stroke-opacity=".35" stroke-width="2"/>
+      <circle cx="32" cy="32" r="28" fill="url(#${id}b)" stroke="url(#${id}r)" stroke-width="4"/>
+      ${laurel('#ffe08a')}
+      <path d="${starPath(32, 28, 14)}" fill="url(#${id}c)" stroke="#a87c22" stroke-width=".8" stroke-linejoin="round"/>
+      <rect x="17" y="43" width="30" height="12" rx="6" fill="#14110c" stroke="url(#${id}r)" stroke-width="1.6"/>
+      <text x="32" y="52.2" text-anchor="middle" font-size="9.5" font-weight="800" fill="#fff" font-family="${FONT}" letter-spacing=".5">${year}</text>
+    </svg>`;
+  }
+
+  // mistrzowie powiatu: drużyna -> lata zdobytych tytułów (liczone z premii za miejsca, tak jak kafelek „Obecny Mistrz Powiatu”)
+  function awChampions() {
+    const events = new Map();
+    STATE.matches.forEach(m => {
+      const comp = String(m.comp || '').toLowerCase(), tier = String(m.tier || '').toLowerCase(), ed = String(m.edition || '').toLowerCase();
+      if (!comp.includes('mistrzostwa powiatu') || tier.includes('mecz specjalny') || ed === 'przepustka el. mp') return;
+      const k = comp + '|' + tier + '|' + ed;
+      let ev = events.get(k);
+      if (!ev) { ev = { first: String(m.date), entries: [] }; events.set(k, ev); }
+      if (String(m.date) < ev.first) ev.first = String(m.date);
+      if (m.bonusA > 0) ev.entries.push({ team: m.teamA, bonus: m.bonusA });
+      if (m.bonusB > 0) ev.entries.push({ team: m.teamB, bonus: m.bonusB });
+    });
+    const byYear = {};
+    events.forEach(ev => {
+      if (!ev.entries.length) return;
+      const top = Math.max(...ev.entries.map(e => e.bonus));
+      byYear[ev.first.slice(0, 4)] = ev.entries.find(e => e.bonus === top).team;
+    });
+    Object.keys(MP_FALLBACK).forEach(y => { if (!byYear[y]) byYear[y] = MP_FALLBACK[y]; });
+    const out = {};
+    Object.keys(byYear).sort().forEach(y => { (out[byYear[y]] = out[byYear[y]] || []).push(y); });
+    return out;
+  }
+
+  function awBadgeList(team) {
+    const list = [];
+    const years = awChampions()[team] || [];
+    if (years.length) {
+      const n = years.length, t = TIERS[Math.min(n, 4)];
+      list.push({ svg: champSvg(n), tier: Math.min(n, 4), title: 'Mistrz Powiatu',
+        sub: `${n} ${pl(n, 'tytuł', 'tytuły', 'tytułów')} • ${years.join(', ')}`,
+        tip: `Mistrz Powiatu – ${n} ${pl(n, 'tytuł', 'tytuły', 'tytułów')} (${years.join(', ')}). Odznaka ${t.name}${n < 4 ? ' – kolejny tytuł ją ulepszy' : ' – najwyższy poziom'}.` });
+    }
+    AW.items.filter(i => i.kind === 'year' && i.team === team).sort((a, b) => b.period.localeCompare(a.period)).forEach(i =>
+      list.push({ svg: yearSvg(i.period), tier: 0, title: 'Drużyna Roku', sub: i.period, tip: `Drużyna Roku ${i.period}` }));
+    AW.items.filter(i => i.kind === 'month' && i.team === team).sort((a, b) => b.period.localeCompare(a.period)).forEach(i =>
+      list.push({ svg: monthSvg(monthAbbr(i.period)), tier: 0, title: 'Drużyna Miesiąca', sub: monthLabel(i.period), tip: `Drużyna Miesiąca – ${monthLabel(i.period)}` }));
+    return list;
+  }
+  function awBadgesHtml(team) {
+    const list = awBadgeList(team);
+    if (!list.length) return '';
+    return `<div id="aw-badges" class="panel rounded-2xl p-5">
+      <h3 class="font-extrabold text-sm uppercase tracking-wider text-amber-400 mb-3">🎖️ Odznaki (${list.length})</h3>
+      <div class="aw-grid">${list.map(b => `<div class="aw-badge aw-t${b.tier}" role="img" tabindex="0" aria-label="${attr(b.tip)}" title="${attr(b.tip)}" data-tip="${attr(b.tip)}">${b.svg}<div class="aw-txt"><div class="aw-t">${esc(b.title)}</div><div class="aw-s">${esc(b.sub)}</div></div></div>`).join('')}</div>
+    </div>`;
+  }
+  function awInjectBadges() {
+    const root = document.getElementById('team-card-content');
+    if (!root) return;
+    const old = document.getElementById('aw-badges'); if (old) old.remove();
+    const team = STATE.selectedTeamCard;
+    if (!team) return;
+    const html = awBadgesHtml(team);
+    if (!html) return;
+    const h3 = [...root.querySelectorAll('h3')].find(h => h.textContent.includes('Gablota z Trofeami'));
+    const panel = h3 && h3.closest('.panel');
+    if (panel) panel.insertAdjacentHTML('beforebegin', html); else root.insertAdjacentHTML('afterbegin', html);
+  }
+  const _rtc = window.renderTeamCard;
+  window.renderTeamCard = function () {
+    let err = null;
+    try { _rtc.apply(this, arguments); } catch (e) { err = e; }
+    try { awInjectBadges(); } catch (e) { console.warn('[nagrody]', e); }
+    if (err) throw err;
+  };
+  document.addEventListener('click', e => { const b = e.target.closest && e.target.closest('.aw-badge'); if (b && b.dataset.tip) say(b.dataset.tip); });
+  document.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.classList && e.target.classList.contains('aw-badge')) { e.preventDefault(); say(e.target.dataset.tip); } });
+
+  // ---------- 3. dane do wyboru drużyny miesiąca / roku ----------
+  function awStats(kind, key) {
+    const st = {};
+    const get = n => st[n] || (st[n] = { name: n, gain: 0, n: 0, w: 0, r: 0, l: 0, gf: 0, ga: 0, g: 0, s: 0, b: 0 });
+    STATE.matches.forEach(m => {
+      if (periodOf(m, kind) !== key) return;
+      const ga = parseInt(m.goalsA, 10) || 0, gb = parseInt(m.goalsB, 10) || 0;
+      const resA = (typeof m.resA === 'number' && !isNaN(m.resA)) ? m.resA : (ga > gb ? 1 : ga === gb ? 0.5 : 0);
+      [[m.teamA, m.eloPostA - m.eloPreA, resA, ga, gb], [m.teamB, m.eloPostB - m.eloPreB, 1 - resA, gb, ga]].forEach(([n, d, res, gf, gag]) => {
+        const t = get(n); t.gain += d;
+        if (isSpar(m)) return;                  // sparingi liczą się tylko do ELO
+        t.n++; t.gf += gf; t.ga += gag;
+        if (res > 0.5) t.w++; else if (res === 0.5) t.r++; else t.l++;
+      });
+    });
+    awTrophyList(kind, key).forEach(x => { const t = get(x.team); if (x.place === 1) t.g++; else if (x.place === 2) t.s++; else t.b++; });
+    return Object.values(st);
+  }
+  function awTrophyList(kind, key, onlyTeam) {
+    const seen = new Set(), out = [];
+    STATE.matches.forEach(m => {
+      if (periodOf(m, kind) !== key || m.tier === 'Mecz Specjalny' || m.edition === 'Przepustka El. MP' || isSpar(m)) return;
+      [[m.teamA, m.bonusA], [m.teamB, m.bonusB]].forEach(([team, b]) => {
+        if (!(b > 0) || (onlyTeam && team !== onlyTeam)) return;
+        const id = [team, m.comp, m.tier, m.edition].join('|');
+        if (seen.has(id)) return;
+        const f = computeCompetitionPodium(m.comp, m.tier, m.edition).find(p => p.team === team && p.bonus === b);
+        if (f) { seen.add(id); out.push({ team, place: f.place, label: (m.tier ? m.comp + ' (' + m.tier + ')' : m.comp) + (m.edition ? ' • ' + m.edition : '') }); }
+      });
+    });
+    return out;
+  }
+  function awCategories(kind, key) {
+    const all = awStats(kind, key), minN = kind === 'month' ? 3 : 8;
+    const top = (arr, cmp) => arr.slice().sort(cmp).slice(0, 3);
+    return [
+      { id: 'gain', icon: '📈', label: 'Największy przyrost ELO', list: top(all.filter(t => t.gain > 0), (a, b) => b.gain - a.gain) },
+      { id: 'rate', icon: '📊', label: `Najlepszy bilans wygranych (min. ${minN} mecze)`, list: top(all.filter(t => t.n >= minN), (a, b) => (b.w / b.n) - (a.w / a.n) || b.n - a.n || b.gain - a.gain) },
+      { id: 'wins', icon: '💪', label: 'Najwięcej zwycięstw', list: top(all.filter(t => t.w > 0), (a, b) => b.w - a.w || b.gain - a.gain) },
+      { id: 'trophies', icon: '🏆', label: 'Najwięcej trofeów (podia)', list: top(all.filter(t => t.g + t.s + t.b > 0), (a, b) => (b.g * 3 + b.s * 2 + b.b) - (a.g * 3 + a.s * 2 + a.b) || b.g - a.g || b.gain - a.gain) },
+      { id: 'gd', icon: '⚽', label: `Najlepsza różnica bramek (min. ${minN} mecze)`, list: top(all.filter(t => t.n >= minN), (a, b) => (b.gf - b.ga) - (a.gf - a.ga) || b.gf - a.gf) }
+    ].filter(c => c.list.length);
+  }
+
+  // mecze + sumy jednej drużyny w okresie (do grafiki)
+  function awTeamData(name, kind, key) {
+    const all = STATE.matches.filter(m => periodOf(m, kind) === key && (m.teamA === name || m.teamB === name))
+      .slice().sort((a, b) => String(a.date).localeCompare(String(b.date)) || (a.order || 0) - (b.order || 0))
+      .map(m => {
+        const isA = m.teamA === name, ga = parseInt(m.goalsA, 10) || 0, gb = parseInt(m.goalsB, 10) || 0;
+        const resA = (typeof m.resA === 'number' && !isNaN(m.resA)) ? m.resA : (ga > gb ? 1 : ga === gb ? 0.5 : 0);
+        return { date: m.date, opp: isA ? m.teamB : m.teamA, own: isA ? m.goalsA : m.goalsB, oth: isA ? m.goalsB : m.goalsA,
+          res: isA ? resA : 1 - resA, d: isA ? m.eloPostA - m.eloPreA : m.eloPostB - m.eloPreB, comp: m.comp || '', sp: isSpar(m),
+          gf: isA ? ga : gb, ga: isA ? gb : ga };
+      });
+    const off = all.filter(r => !r.sp), use = off.length ? off : all;
+    const o = { gain: all.reduce((s, r) => s + r.d, 0), rows: use, n: use.length, w: 0, r: 0, l: 0, gf: 0, ga: 0 };
+    use.forEach(r => { o.gf += r.gf; o.ga += r.ga; if (r.res > 0.5) o.w++; else if (r.res === 0.5) o.r++; else o.l++; });
+    return o;
+  }
+
+  // ---------- 4. panel admina (zakładka Grafiki): wybór i zatwierdzenie ----------
+  const AWP = { pick: {} };
+  const curKey = () => AG.kind === 'month' ? AG.month : AG.year;
+  function awPeriods(kind) {
+    const dates = STATE.matches.map(m => String(m.date)).filter(d => /^\d{4}-\d{2}-\d{2}/.test(d));
+    if (kind === 'month') return [...new Set(dates.map(d => d.slice(0, 7)))].filter(k => k >= AWARD_FROM_MONTH).sort().reverse();
+    return [...new Set(dates.map(d => d.slice(0, 4)))].filter(y => +y >= AWARD_FROM_YEAR).sort().reverse();
+  }
+  function awDefaultPeriod(kind, periods) {
+    const n = now();
+    if (kind === 'month') return periods.filter(k => k < n.m)[0] || periods[0];
+    return periods.includes(n.y) ? n.y : periods[0];
+  }
+  function candCard(t, cat, on) {
+    const pct = t.n ? Math.round(t.w / t.n * 100) : 0, gd = t.gf - t.ga;
+    const val = cat.id === 'gain' ? fmtGain(t.gain) : cat.id === 'rate' ? pct + '%' : cat.id === 'wins' ? String(t.w) : cat.id === 'trophies' ? `🥇${t.g} 🥈${t.s} 🥉${t.b}` : (gd >= 0 ? '+' : '') + gd;
+    const line = `${t.w}W ${t.r}R ${t.l}P • ${pct}% • bramki ${t.gf}:${t.ga} • ELO ${fmtGain(t.gain)}` + (t.g + t.s + t.b ? ` • 🥇${t.g} 🥈${t.s} 🥉${t.b}` : '');
+    return `<button type="button" data-aw="pick" data-team="${attr(t.name)}" class="aw-cand${on ? ' is-on' : ''}">${renderTeamAvatar(t.name, 'w-9 h-9', 'text-xs')}<span class="aw-cand-t"><b>${esc(t.name)}</b><small>${esc(line)}</small></span><span class="aw-cand-v">${esc(val)}</span></button>`;
+  }
+  function awDrawPicker() {
+    const ctr = document.getElementById('ag-controls');
+    if (!ctr || (AG.kind !== 'month' && AG.kind !== 'year')) return;
+    const kind = AG.kind, noun = kind === 'month' ? 'miesiąca' : 'roku', prop = kind === 'month' ? 'month' : 'year';
+    const periods = awPeriods(kind);
+    if (!periods.length) {
+      ctr.innerHTML = `<p class="text-xs text-slate-400 sm:col-span-2">Brak meczów od ${kind === 'month' ? monthLabel(AWARD_FROM_MONTH) : AWARD_FROM_YEAR}, więc nie ma jeszcze z czego wybierać drużyny ${noun}.</p>`;
+      return;
+    }
+    if (!periods.includes(AG[prop])) AG[prop] = awDefaultPeriod(kind, periods);
+    const key = AG[prop], saved = awardFor(kind, key), pk = kind + ':' + key;
+    if (!(pk in AWP.pick)) AWP.pick[pk] = saved ? saved.team : '';
+    const picked = AWP.pick[pk], n = now();
+    const opts = periods.map(p => `<option value="${attr(p)}"${p === key ? ' selected' : ''}>${esc(kind === 'month' ? monthLabel(p) : p)}${(kind === 'month' ? p === n.m : p === n.y) ? ' (trwa)' : ''} ${awardFor(kind, p) ? '✅' : '⚠️ nie wybrano'}</option>`).join('');
+    const cats = awCategories(kind, key);
+    const status = saved
+      ? `<div class="aw-status ok">${renderTeamAvatar(saved.team, 'w-9 h-9', 'text-xs')}<span class="min-w-0 flex-1"><b>✅ Zatwierdzona: ${esc(saved.team)}</b><small>Grafika poniżej powstaje z tej drużyny. Możesz wybrać inną i zatwierdzić ponownie.</small></span><button type="button" data-aw="del" class="aw-mini">Usuń wybór</button></div>`
+      : `<div class="aw-status warn"><span class="min-w-0 flex-1"><b>⚠️ Nie zatwierdzono jeszcze drużyny ${noun}</b><small>Wybierz jedną z propozycji niżej i zatwierdź – dopiero wtedy powstanie grafika i odznaka.</small></span></div>`;
+    const canSave = picked && !(saved && saved.team === picked);
+    ctr.innerHTML = `<div class="sm:col-span-2 space-y-3">
+      <label class="block space-y-1"><span class="text-[11px] font-bold text-slate-400">${kind === 'month' ? 'Miesiąc' : 'Rok'}</span>
+        <select id="aw-period" onchange="awSetPeriod(this.value)" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">${opts}</select></label>
+      ${status}
+      <p class="text-[11px] text-slate-400">Propozycje wg danych (sparingi liczą się tylko do ELO). Dotknij drużynę, którą wybierasz:</p>
+      ${cats.length ? cats.map(c => `<div class="space-y-1.5"><p class="text-[11px] font-extrabold uppercase tracking-wider text-gold-400">${c.icon} ${esc(c.label)}</p>${c.list.map(t => candCard(t, c, t.name === picked)).join('')}</div>`).join('') : '<p class="text-xs text-slate-500">Za mało meczów w tym okresie, żeby coś zaproponować – wyszukaj drużynę ręcznie.</p>'}
+      <div class="space-y-1.5"><p class="text-[11px] font-extrabold uppercase tracking-wider text-gold-400">🔎 Inna drużyna</p>
+        <input type="search" id="aw-search" placeholder="Wpisz nazwę drużyny…" autocomplete="off" oninput="awSearch(this.value)" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white">
+        <div id="aw-search-res" class="space-y-1.5"></div></div>
+      ${picked ? `<p class="text-[12px] text-slate-200">Zaznaczona: <b>${esc(picked)}</b></p>` : ''}
+      <button type="button" data-aw="save" ${canSave ? '' : 'disabled'} class="aw-save">${picked ? (canSave ? '✅ Zatwierdź drużynę ' + noun + ': ' + esc(picked) : '✔ Ta drużyna jest już zatwierdzona') : 'Wybierz drużynę z listy'}</button>
+    </div>`;
+  }
+  window.awSetPeriod = function (v) { AG[AG.kind === 'month' ? 'month' : 'year'] = v; awDrawPicker(); agGenerate(); };
+  window.awSearch = function (q) {
+    const box = document.getElementById('aw-search-res'); if (!box) return;
+    const k = (typeof normalizeKey === 'function') ? normalizeKey(q) : String(q).toLowerCase();
+    if (k.length < 2) { box.innerHTML = ''; return; }
+    const list = STATE.teams.filter(t => ((typeof normalizeKey === 'function') ? normalizeKey(t.name) : t.name.toLowerCase()).includes(k)).sort((a, b) => b.elo - a.elo).slice(0, 6);
+    box.innerHTML = list.map(t => `<button type="button" data-aw="pick" data-team="${attr(t.name)}" class="aw-cand">${renderTeamAvatar(t.name, 'w-9 h-9', 'text-xs')}<span class="aw-cand-t"><b>${esc(t.name)}</b><small>ELO ${Math.round(t.elo)}${t.city ? ' • ' + esc(t.city) : ''}</small></span></button>`).join('') || '<p class="text-[11px] text-slate-500">Nie znaleziono.</p>';
+  };
+  async function awSave() {
+    const kind = AG.kind, key = curKey(), team = AWP.pick[kind + ':' + key];
+    if (!team || AW.busy) return;
+    AW.busy = true; say('Zapisuję…');
+    try {
+      const d = await awPost({ action: 'awardSet', kind, period: key, team });
+      if (!d) return;
+      AW.items = Array.isArray(d.items) ? clean(d.items) : clean(AW.items.filter(i => !(i.kind === kind && i.period === key)).concat([{ kind, period: key, team, ts: new Date().toISOString() }]));
+      cacheSave(); say('Zatwierdzono ✓'); awRefresh();
+    } finally { AW.busy = false; }
+  }
+  async function awDel() {
+    const kind = AG.kind, key = curKey();
+    if (AW.busy) return;
+    AW.busy = true;
+    try {
+      const d = await awPost({ action: 'awardDel', kind, period: key });
+      if (!d) return;
+      AW.items = Array.isArray(d.items) ? clean(d.items) : AW.items.filter(i => !(i.kind === kind && i.period === key));
+      delete AWP.pick[kind + ':' + key];
+      cacheSave(); say('Wybór usunięty'); awRefresh();
+    } finally { AW.busy = false; }
+  }
+  function awBind() {
+    const ctr = document.getElementById('ag-controls');
+    if (!ctr || ctr.dataset.awBound) return;
+    ctr.dataset.awBound = '1';
+    ctr.addEventListener('click', e => {
+      const el = e.target.closest('[data-aw]');
+      if (!el || (AG.kind !== 'month' && AG.kind !== 'year')) return;
+      const act = el.dataset.aw;
+      if (act === 'pick') { AWP.pick[AG.kind + ':' + curKey()] = el.dataset.team; awDrawPicker(); }
+      else if (act === 'save') awSave();
+      else if (act === 'del') awDel();
+    });
+  }
+
+  // wpięcie w generator grafik
+  if (typeof AG_KINDS !== 'undefined' && !AG_KINDS.some(k => k[0] === 'year')) AG_KINDS.push(['year', 'Drużyna roku']);
+  if (typeof renderAgView === 'function') {
+    const _rav = window.renderAgView;
+    window.renderAgView = function () {
+      const r = _rav.apply(this, arguments);
+      try { if (AG.kind === 'month' || AG.kind === 'year') { awBind(); awDrawPicker(); agGenerate(); } } catch (e) { console.warn('[nagrody]', e); }
+      return r;
+    };
+  }
+  if (typeof agSpec === 'function') {
+    const _as = window.agSpec;
+    window.agSpec = function () {
+      if (AG.kind === 'month' || AG.kind === 'year') return awSpec(AG.kind);
+      return _as.apply(this, arguments);
+    };
+  }
+  function awSpec(kind) {
+    const key = curKey(), saved = awardFor(kind, key);
+    if (!saved) return { error: 'Najpierw wybierz i zatwierdź drużynę ' + (kind === 'month' ? 'miesiąca' : 'roku') + ' (lista powyżej) – grafika powstaje z zatwierdzonej drużyny.' };
+    const name = saved.team, team = STATE.teams.find(t => t.name === name) || { name, elo: 1000, city: '' }, d = awTeamData(name, kind, key);
+    if (kind === 'month') {
+      return { names: [name, ...d.rows.map(x => x.opp)], file: 'druzyna-miesiaca-' + key,
+        draw: (c, W, H, story, logos, portal) => agDrawMonth(c, W, H, story, logos, portal, key, { name, gain: Math.max(0, d.gain), n: d.n, w: d.w, r: d.r, l: d.l }, team, d.rows) };
+    }
+    const tr = awTrophyList('year', key, name).sort((a, b) => a.place - b.place);
+    return { names: [name], file: 'druzyna-roku-' + key, draw: (c, W, H, story, logos, portal) => agDrawYear(c, W, H, story, logos, portal, key, d, team, tr) };
+  }
+
+  // ---------- grafika „Drużyna roku” ----------
+  function agDrawYear(c, W, H, story, logos, portal, year, s, team, troph) {
+    const k = agKit(c, W, H, story, logos, portal), { P, CF, BF, PAD, txt } = k, sq = W === H;
+    k.bg();
+    txt('DRUŻYNA ROKU', W / 2, k.top + 84, 34, 800, P.GOLD, 'center', CF);
+    const y = k.title(String(year), k.top + 100, 150);
+    const fy = k.footer(), bot = fy - 22;
+    const cardsH = sq ? 106 : 130, gapC = 22, rowH = sq ? 46 : 58, maxRows = story ? 6 : (sq ? 3 : 4);
+    const rows = troph.slice(0, maxRows), hidden = troph.length - rows.length;
+    const secH = rows.length ? 46 + rows.length * (rowH + 6) + (hidden > 0 ? 28 : 0) : 0;
+    const nameSz = r => Math.round(Math.min(sq ? 58 : 80, 34 + r * 0.6));
+    const fixed = r => 26 + 2 * r + 12 + 0.85 * nameSz(r) + (team.city ? 52 : 34) + cardsH + gapC + secH;
+    let r = rows.length ? (sq ? 90 : (story ? 190 : 150)) : (sq ? 118 : (story ? 250 : 215));   // bez trofeów logo może być większe
+    while (r > 40 && fixed(r) > bot - y) r -= 2;
+    const cy = y + 26 + r;
+    k.logo(team.name, W / 2, cy, r, '#e2b64e', 8);
+    const ns = nameSz(r), ny = cy + r + 12 + 0.85 * ns;
+    txt(team.name.toUpperCase(), W / 2, ny, ns, 800, P.INK, 'center', CF, W - 2 * PAD);
+    if (team.city) txt(team.city, W / 2, ny + 32, 24, 600, P.MUTED, 'center', BF, W - 2 * PAD);
+    const cw = (W - 2 * PAD - 40) / 3, cy0 = ny + (team.city ? 52 : 34), pct = s.n ? Math.round(s.w / s.n * 100) : 0;
+    [['PRZYROST ELO', fmtGain(s.gain)], ['MECZE', String(s.n), `${s.w}W  ${s.r}R  ${s.l}P`], ['BILANS WYGRANYCH', pct + '%', `bramki ${s.gf}:${s.ga}`]].forEach(([label, val, extra], i) => {
+      const x = PAD + i * (cw + 20);
+      k.rr(x, cy0, cw, cardsH, 22); c.fillStyle = P.CARD; c.fill(); c.lineWidth = 2; c.strokeStyle = P.LINE; c.stroke();
+      txt(label, x + cw / 2, cy0 + 32, 21, 700, P.MUTED, 'center', BF, cw - 16);
+      txt(val, x + cw / 2, cy0 + (extra ? cardsH - 38 : cardsH - 24), extra ? 50 : 70, 800, P.GOLD, 'center', CF, cw - 24);
+      if (extra) txt(extra, x + cw / 2, cy0 + cardsH - 10, 20, 700, P.MUTED, 'center', BF, cw - 16);
+    });
+    if (rows.length) {
+      const ly = cy0 + cardsH + gapC, y0 = ly + 46, colW = W - 2 * PAD, medal = ['#e2b64e', '#cfd2d6', '#c27a3c'];
+      txt('TROFEA W TYM ROKU', W / 2, ly + 24, 22, 700, P.MUTED, 'center', BF);
+      rows.forEach((t, i) => {
+        const yy = y0 + i * (rowH + 6), mid = yy + rowH / 2;
+        k.rr(PAD, yy, colW, rowH, 14); c.fillStyle = P.CARD; c.fill(); c.lineWidth = 2; c.strokeStyle = P.LINE; c.stroke();
+        c.beginPath(); c.arc(PAD + 34, mid, 17, 0, Math.PI * 2); c.fillStyle = medal[Math.min(t.place, 3) - 1]; c.fill();
+        txt(String(t.place), PAD + 34, mid + 8, 24, 800, '#14110c', 'center', CF);
+        txt(t.label, PAD + 66, mid + 8, sq ? 22 : 26, 700, P.INK, 'left', BF, colW - 90);
+      });
+      if (hidden > 0) txt(`+ ${hidden} ${pl(hidden, 'trofeum', 'trofea', 'trofeów')} więcej`, W / 2, y0 + rows.length * (rowH + 6) + 20, 20, 600, P.MUTED, 'center', BF);
+    }
+  }
+
+  // ---------- styl ----------
+  const css = document.createElement('style');
+  css.textContent = `
+    .aw-grid{display:flex;flex-wrap:wrap;gap:.7rem}
+    .aw-badge{display:flex;align-items:center;gap:.65rem;padding:.5rem .95rem .5rem .5rem;border-radius:1.1rem;border:1px solid var(--panel-line);background:rgba(226,182,78,.06);cursor:pointer;max-width:100%;transition:border-color .15s ease,transform .15s ease}
+    .aw-badge:hover,.aw-badge:focus-visible{border-color:#e2b64e;transform:translateY(-1px)}
+    .aw-badge svg{flex:none;filter:drop-shadow(0 2px 6px rgba(0,0,0,.35))}
+    .aw-badge.aw-t3 svg{filter:drop-shadow(0 0 7px rgba(232,185,63,.55))}
+    .aw-badge.aw-t4 svg{filter:drop-shadow(0 0 9px rgba(138,92,255,.6))}
+    .aw-txt{min-width:0}.aw-t{font-weight:800;font-size:.82rem;line-height:1.15;color:var(--ink)}
+    .aw-s{font-size:.7rem;line-height:1.25;color:var(--chart-tick-y,#a79d85)}
+    .aw-sh{animation:awShine 2.8s ease-in-out infinite}
+    @keyframes awShine{0%{transform:translateX(0)}55%,100%{transform:translateX(92px)}}
+    @media (prefers-reduced-motion:reduce){.aw-sh{animation:none}}
+    .aw-cand{display:flex;align-items:center;gap:.65rem;width:100%;text-align:left;padding:.5rem .65rem;border-radius:.85rem;border:1px solid rgba(120,110,95,.4);transition:border-color .15s ease,background-color .15s ease}
+    .aw-cand:hover{border-color:#e2b64e}
+    .aw-cand.is-on{border-color:#e2b64e;background:rgba(226,182,78,.16)}
+    .aw-cand-t{min-width:0;flex:1;display:block}.aw-cand-t b{display:block;font-size:.85rem;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .aw-cand-t small{display:block;font-size:.68rem;line-height:1.3;color:var(--chart-tick-y,#a79d85)}
+    .aw-cand-v{flex:none;font-weight:800;font-size:.9rem;color:#e2b64e;font-family:'Barlow Condensed','Barlow',sans-serif}
+    .aw-status{display:flex;align-items:center;gap:.65rem;padding:.65rem .8rem;border-radius:.85rem;border:1px solid}
+    .aw-status b{display:block;font-size:.82rem;color:var(--ink)}.aw-status small{display:block;font-size:.7rem;color:var(--chart-tick-y,#a79d85)}
+    .aw-status.ok{border-color:rgba(16,185,129,.5);background:rgba(16,185,129,.1)}.aw-status.warn{border-color:rgba(245,158,11,.5);background:rgba(245,158,11,.1)}
+    .aw-mini{flex:none;padding:.35rem .7rem;border-radius:.7rem;font-size:.7rem;font-weight:700;background:rgba(244,63,94,.15);color:#f43f5e}
+    .aw-save{width:100%;padding:.8rem 1rem;border-radius:.85rem;font-weight:800;font-size:.85rem;background:#e2b64e;color:#14110c;transition:opacity .15s ease}
+    .aw-save:disabled{opacity:.45;background:rgba(120,110,95,.3);color:var(--ink)}`;
+  document.head.appendChild(css);
+
+  awLoad();
+})();
+  </script>
+
   <!-- Cloudflare Web Analytics --><script type='module' src='https://static.cloudflareinsights.com/beacon.min.js' data-cf-beacon='{"token": "4d20db7702f947ca8b95e5cb9904b104"}'></script><!-- End Cloudflare Web Analytics -->
 </body>
 </html>
